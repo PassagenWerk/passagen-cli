@@ -11,3 +11,5 @@ reports/
 *.sqlite3
 data/
 dist/
+
+tmp/

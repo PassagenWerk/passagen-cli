@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MIGRATIONS = {
     1: """
@@ -71,6 +71,9 @@ MIGRATIONS = {
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX ix_llm_calls_processing_run_id ON llm_calls(processing_run_id);
+    """,
+    2: """
+        ALTER TABLE artifacts ADD COLUMN size_bytes INTEGER;
     """,
 }
 

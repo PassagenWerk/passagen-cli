@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from passagen.db import (
+    MIGRATIONS,
     SCHEMA_VERSION,
     DatabaseVersionError,
     connect_database,
@@ -90,3 +91,19 @@ def test_rejects_newer_database_schema(tmp_path: Path) -> None:
 
     with pytest.raises(DatabaseVersionError):
         initialize_database(database_path)
+
+
+def test_migrates_version_one_database(tmp_path: Path) -> None:
+    database_path = tmp_path / "passagen.db"
+    with connect_database(database_path) as connection:
+        connection.executescript(MIGRATIONS[1])
+        connection.execute("PRAGMA user_version = 1")
+
+    initialize_database(database_path)
+
+    with connect_database(database_path) as connection:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(artifacts)").fetchall()
+        }
+    assert current_version(database_path) == SCHEMA_VERSION
+    assert "size_bytes" in columns

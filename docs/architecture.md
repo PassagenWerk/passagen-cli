@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-当前 M0-M1 骨架采用少量顶层模块：
+当前 M0-M2 实现采用职责明确的顶层模块：
 
 | 路径 | 当前职责 |
 |------|----------|
@@ -14,6 +14,8 @@
 | `src/passagen/config.py` | 配置读取、优先级合并和运行时校验 |
 | `src/passagen/models.py` | Paper 状态与基础领域模型 |
 | `src/passagen/db.py` | SQLite 连接、事务和 Schema migration |
+| `src/passagen/repository.py` | Paper/PDF artifact 持久化、查询和 row mapping |
+| `src/passagen/scanning.py` | PDF 发现、基础完整性校验、内容寻址导入和失败隔离 |
 
 这些模块在职责仍然紧凑时可以保持不拆分。后续里程碑引入解析、metadata、LLM 和 pipeline 后，再按本文定义的边界演进；不要为了匹配目标目录预先创建空包。
 

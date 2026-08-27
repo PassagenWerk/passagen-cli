@@ -40,6 +40,7 @@ class InvalidStatusTransition(ValueError):
 class Paper:
     original_filename: str
     pdf_sha256: str
+    file_size_bytes: int
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     title: str | None = None
     authors: list[str] = field(default_factory=list)

@@ -9,6 +9,7 @@ def make_paper() -> Paper:
     return Paper(
         original_filename="paper.pdf",
         pdf_sha256="a" * 64,
+        file_size_bytes=1024,
     )
 
 
