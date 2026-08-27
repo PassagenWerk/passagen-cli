@@ -2,3 +2,14 @@ passagen:
   data_dir: data
   database_path: null
   debug: false
+
+metadata:
+  first_pages: 2
+  timeout_seconds: 10
+  crossref:
+    enabled: true
+    base_url: https://api.crossref.org
+    mailto: null
+  arxiv:
+    enabled: true
+    base_url: https://export.arxiv.org

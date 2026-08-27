@@ -28,5 +28,8 @@ def test_status_transition_rejects_skipped_stage() -> None:
     with pytest.raises(InvalidStatusTransition):
         paper.transition_to(PaperStatus.SUMMARIZED)
 
+    paper.transition_to(PaperStatus.METADATA_RESOLVED)
+    assert paper.status is PaperStatus.METADATA_RESOLVED
+
     paper.transition_to(PaperStatus.PARSED)
     assert paper.status is PaperStatus.PARSED

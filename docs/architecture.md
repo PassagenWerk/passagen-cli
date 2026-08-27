@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-当前 M0-M2 实现采用职责明确的顶层模块：
+当前 M0-M3 实现采用职责明确的顶层模块：
 
 | 路径 | 当前职责 |
 |------|----------|
@@ -16,6 +16,9 @@
 | `src/passagen/db.py` | SQLite 连接、事务和 Schema migration |
 | `src/passagen/repository.py` | Paper/PDF artifact 持久化、查询和 row mapping |
 | `src/passagen/scanning.py` | PDF 发现、基础完整性校验、内容寻址导入和失败隔离 |
+| `src/passagen/metadata.py` | 轻量 PDF 标识提取、Crossref/arXiv adapter 和字段合并 |
+| `src/passagen/metadata_service.py` | 元数据查询编排、降级策略和状态推进 |
+| `src/passagen/updating.py` | 单篇/全量 Paper 的当前开发前沿推进与失败隔离 |
 
 这些模块在职责仍然紧凑时可以保持不拆分。后续里程碑引入解析、metadata、LLM 和 pipeline 后，再按本文定义的边界演进；不要为了匹配目标目录预先创建空包。
 
@@ -46,8 +49,8 @@ Passagen Python 包不负责：
 Settings + command input
   -> content-addressed managed PDF artifact
   -> discovered Paper
-  -> ParsedPaper artifact
   -> resolved PaperMetadata
+  -> ParsedPaper artifact
   -> section fact artifacts
   -> validated StructuredSummary artifact
   -> Chinese outline artifact
@@ -67,7 +70,7 @@ Settings + command input
 | `domain/` | Paper、状态转换、稳定值对象和领域错误 | Typer、HTTP、sqlite3 连接 |
 | `storage/` | migration、repository、事务和 artifact 路径管理 | CLI 展示、LLM prompt |
 | `parsing/` | `PaperParser` contract、GROBID/PyMuPDF adapter、统一 ParsedPaper | metadata 查询、summary 生成 |
-| `metadata/` | 标识标准化、Crossref/arXiv adapter、字段来源合并 | PDF 页面解析、pipeline 编排 |
+| `metadata/` | 轻量 PDF 标识提取、Crossref/arXiv adapter、字段来源合并 | 全文结构解析、pipeline 编排 |
 | `summarization/` | summary Schema、分块、prompt、校验和有限修复 | CLI、数据库 migration |
 | `outlining/` | 从合法 summary 生成中文 outline | 直接读取和总结 PDF |
 | `providers/` | LLM provider contract 和供应商 adapter | summary 领域决策 |
@@ -123,8 +126,8 @@ Pipeline 与 Denkbild 的 compiler pipeline 保持相同职责边界：只决定
 | Stage | 输入 | 输出 | 业务实现所有者 |
 |-------|------|------|----------------|
 | `scan` | 源目录、Settings | managed PDF artifact、discovered Paper | scanning/storage |
+| `resolve_metadata` | managed PDF metadata/前几页 | resolved metadata | metadata |
 | `parse` | managed PDF artifact | ParsedPaper artifact | parsing |
-| `resolve_metadata` | identifiers、ParsedPaper | resolved metadata | metadata |
 | `summarize` | ParsedPaper | validated summary | summarization/providers |
 | `outline` | validated summary | Markdown outline | outlining/providers |
 | `complete` | 必需 artifacts | completed status | pipeline/storage |
@@ -139,11 +142,13 @@ Pipeline 与 Denkbild 的 compiler pipeline 保持相同职责边界：只决定
 
 Pipeline 不应把所有中间对象堆成一个不断扩张的 context 字段集合。跨阶段结果通过数据库记录和有类型的 artifact reference 传递；仅一次运行需要的依赖可以放在轻量 context 中。
 
+`update [paper-id] [--refresh]` 是当前 pipeline 的稳定用户入口。`LATEST_IMPLEMENTED_STATUS` 声明开发前沿；每增加一个已交付阶段，orchestration 追加从现有状态到该前沿的步骤。省略 ID 时读取全部 Paper，每篇独立推进并汇总 updated、skipped、warning 和 failure，不能因单篇失败中止整个批次。`--refresh` 重新执行已实现阶段，并保留已超过该阶段的 Paper 状态。
+
 ## 持久化与事务
 
 - repository 负责 SQL 与 row mapping，领域层不拼接 SQL。
 - 默认配置路径和 `data_dir` 以当前工作目录为根；不得在 adapter 内回退到用户 Home 目录。
-- migration 按整数版本只向前执行，不在运行时猜测旧表结构。
+- v0.1 发布前直接维护可重建的完整 Schema v1；发布后 migration 才按整数版本只向前执行。
 - 数据库版本高于程序支持版本时立即拒绝运行。
 - SQLite connection 统一启用 foreign keys、WAL 和 busy timeout。
 - 数据库事务只覆盖数据库操作，不在持有写事务时调用 GROBID、Crossref、arXiv 或 LLM。

@@ -31,6 +31,30 @@ def test_loads_yaml_and_environment_override(
     assert settings.debug is False
 
 
+def test_loads_layered_metadata_config_and_nested_environment_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+passagen: {}
+metadata:
+  first_pages: 4
+  timeout_seconds: 20
+  crossref:
+    enabled: false
+"""
+    )
+    monkeypatch.setenv("PASSAGEN_METADATA__TIMEOUT_SECONDS", "3.5")
+
+    settings = load_settings(config_path)
+
+    assert settings.metadata.first_pages == 4
+    assert settings.metadata.timeout_seconds == 3.5
+    assert settings.metadata.crossref.enabled is False
+    assert settings.metadata.arxiv.enabled is True
+
+
 def test_cli_override_has_highest_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text("passagen:\n  data_dir: /from/file\n")

@@ -37,6 +37,24 @@
 
 首版使用同步执行模型，每次处理一篇论文。实际验证存在吞吐瓶颈后，再考虑有限并发。
 
+## 数据库 Schema 策略
+
+v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
+
+- `SCHEMA_VERSION` 保持为 `1`，当前完整表结构直接维护在初始 Schema 中。
+- Roadmap 阶段、代码模块或配置变化不触发 Schema version 递增。
+- 表结构变化时同步修改初始 Schema 和测试；本地旧数据库通过删除 `data/passagen.db` 后重新初始化。
+- 发布前不保留只服务于早期开发数据库的 v1→v2→v3 等增量 migration。
+
+满足以下任一条件后开始维护只向前执行的 migration：
+
+- 发布首个承诺保留用户数据的版本。
+- 数据库已经被真实用户或团队共享使用。
+- 重新导入和处理数据的成本已经不可接受。
+- 项目明确承诺旧数据库可升级到新程序。
+
+进入该阶段后，不再修改已经发布的 migration；只有持久化表结构变化才增加 `SCHEMA_VERSION`。数据库 Schema、artifact Schema 和 prompt Schema 分别独立版本化。
+
 ## M0：项目骨架
 
 ### 工作内容
@@ -68,7 +86,7 @@
 ### 工作内容
 
 - 定义 `Paper`、`Artifact`、`ProcessingRun` 和 `LLMCall` 数据模型。
-- 建立初始数据库 Schema 和版本化 SQL migration。
+- 建立可重建的初始数据库 Schema，并保留未来前向 migration 的执行机制。
 - 为标准化 DOI、arXiv ID 和 PDF SHA-256 建立唯一约束。
 - 实现不可变的内部 `paper_id`。
 - 定义任务状态及合法状态转换。
@@ -78,7 +96,7 @@
 
 - `passagen db init`
 - `passagen db status`
-- 第一版 SQLite Schema migration
+- SQLite Schema v1
 - Repository/storage 层的最小实现
 
 ### 验收条件
@@ -118,16 +136,51 @@
 - 损坏文件、无权限文件和非 PDF 文件不会中断整个扫描过程。
 - CLI 能显示新增、跳过和失败文件的数量。
 
-## M3：PDF 解析
+## M3：论文标识与基础元数据
+
+状态：已实现。
+
+### 工作内容
+
+- 只从 `original_pdf` artifact 指向的受管理文件读取 PDF，不回退到扫描源路径。
+- 使用 PyMuPDF 读取 PDF metadata/XMP 和前几页文本，不执行全文结构解析。
+- metadata 缺失时利用前几页字体/坐标版式和原文件名候选提取 title 与 authors，并过滤出版方封面、机构和 URL。
+- 从 metadata、首页和前几页中提取并标准化 DOI 与 arXiv ID。
+- 实现 Crossref REST API 客户端，使用 DOI 精确查询元数据。
+- 实现 arXiv API 客户端，使用规范化 arXiv ID 精确查询元数据。
+- 同时存在 DOI 和 arXiv ID 时查询两者，并按 `user > crossref > arxiv > pdf` 合并字段。
+- 保存 title、authors、year、venue、source URL、标识和字段来源。
+- Crossref 或 arXiv 未命中、限流或不可用时使用 PDF 本地元数据继续处理。
+- 没有 DOI/arXiv ID 时仍推进到 `metadata_resolved`，不执行标题模糊查询。
+
+### 交付物
+
+- `passagen metadata <paper-id> [--refresh]`
+- `passagen update [paper-id] [--refresh]`，将单篇或全部 Paper 推进到当前最新实现阶段，或刷新已有阶段
+- 轻量 PDF 标识提取器
+- Crossref 和 arXiv API 客户端
+- 字段来源与元数据持久化
+
+### 验收条件
+
+- DOI 只通过 Crossref 精确查询，arXiv ID 只通过 arXiv API 精确查询。
+- 不根据模糊标题自动定位或合并论文。
+- 任一 API 超时、限流和未命中都不会阻塞后续全文解析。
+- 每个元数据字段保存 `user`、`crossref`、`arxiv` 或 `pdf` 来源。
+- PDF metadata 为空且未找到标识时也能保存本地最小结果。
+- 使用 HTTP mock 覆盖 Crossref 和 arXiv 的成功、未命中、限流及服务错误。
+- `update <paper-id>` 只推进指定 Paper；省略 ID 时处理全部落后记录并跳过已完成项。
+- 批量 update 隔离单篇失败，输出 updated/skipped/failed 汇总并以非零状态报告部分失败。
+
+## M4：全文结构解析
 
 ### 工作内容
 
 - 定义统一 `PaperParser` 接口和 `ParsedPaper` 模型。
-- 只从 `original_pdf` artifact 指向的受管理文件读取 PDF，不回退到扫描源路径。
 - 实现 GROBID 健康检查和 `processFulltextDocument` 调用。
 - 将 TEI XML 转换为统一的 metadata、sections 和 references 结构。
 - 保留章节对应的页码或坐标信息。
-- 实现 PyMuPDF 解析器和自动降级。
+- 实现 PyMuPDF 全文解析器和自动降级。
 - 检测无文本层、解析结果过短和异常页面顺序。
 - 保存 `extracted.json`，避免后续阶段重复解析 PDF。
 
@@ -140,37 +193,10 @@
 
 ### 验收条件
 
-- GROBID 可用时，能够获得标题、章节和参考文献结构。
+- GROBID 可用时能够获得标题、章节和参考文献结构。
 - GROBID 不可用时，`auto` 模式自动降级并记录实际 parser。
 - 扫描版 PDF 会以明确的 `no_text_layer` 原因失败。
 - 对选定的单栏、双栏和 arXiv PDF 样本建立固定回归测试。
-
-## M4：元数据补全与论文合并
-
-### 工作内容
-
-- 从解析结果中提取并标准化 DOI 和 arXiv ID。
-- 实现 Crossref REST API 客户端，使用 DOI 精确查询元数据。
-- 实现 arXiv API 客户端，使用规范化 arXiv ID 精确查询元数据。
-- 同时存在 DOI 和 arXiv ID 时查询两者，并按 `user > crossref > arxiv > pdf` 合并字段。
-- 保存 title、authors、year、venue、source URL 和字段来源。
-- Crossref 或 arXiv 未命中、限流或不可用时使用 PDF 元数据继续处理。
-- 当 DOI 或 arXiv ID 指向已有论文时执行安全合并。
-- 保留同一论文不同 PDF 版本及其受管理 artifact 的关联记录。
-
-### 交付物
-
-- `passagen metadata <paper-id> [--refresh]`
-- Crossref 和 arXiv API 客户端
-- 标识标准化和记录合并逻辑
-
-### 验收条件
-
-- Crossref 只按 DOI 查询，arXiv API 只按 arXiv ID 查询，不通过模糊标题自动合并。
-- 任一 API 超时、限流和未命中都不会阻塞摘要流程或丢失已有解析结果。
-- 每个元数据字段保存 `user`、`crossref`、`arxiv` 或 `pdf` 来源。
-- 合并记录后，产物和处理历史仍关联到正确的 `paper_id`。
-- 分别使用 HTTP mock 覆盖 Crossref 和 arXiv 的成功、未命中、限流及服务错误。
 
 ## M5：英文结构化摘要
 
@@ -235,6 +261,7 @@
 ### 工作内容
 
 - 实现各阶段编排和状态持久化。
+- 随已实现阶段扩展 `update [paper-id]` 的目标，不改变其单篇/全量接口。
 - 实现失败阶段重试、幂等执行和 `--force` 显式重建。
 - 在受管理存储中保存 PDF，并在论文 artifact 目录中保存解析结果、摘要和 outline。
 - 增加 GROBID、Crossref、arXiv 和 LLM 的超时及指数退避。
@@ -294,7 +321,7 @@
 
 ### 集成测试
 
-- SQLite `user_version` migration、事务、外键和唯一约束。
+- 当前完整 Schema v1、事务、外键和唯一约束。
 - GROBID、Crossref、arXiv 和 LLM 的 mock HTTP 交互。
 - GROBID 失败后的 PyMuPDF 降级。
 - 分块成功后合并失败的断点续跑。

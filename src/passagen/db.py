@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 1
 
 MIGRATIONS = {
     1: """
@@ -18,6 +18,7 @@ MIGRATIONS = {
             doi TEXT,
             arxiv_id TEXT,
             source_url TEXT,
+            metadata_sources_json TEXT NOT NULL DEFAULT '{}',
             original_filename TEXT NOT NULL,
             pdf_sha256 TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'discovered' CHECK (
@@ -41,6 +42,7 @@ MIGRATIONS = {
             path TEXT NOT NULL,
             version TEXT,
             sha256 TEXT,
+            size_bytes INTEGER,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX ix_artifacts_paper_id ON artifacts(paper_id);
@@ -71,9 +73,6 @@ MIGRATIONS = {
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX ix_llm_calls_processing_run_id ON llm_calls(processing_run_id);
-    """,
-    2: """
-        ALTER TABLE artifacts ADD COLUMN size_bytes INTEGER;
     """,
 }
 

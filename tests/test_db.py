@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from passagen.db import (
-    MIGRATIONS,
     SCHEMA_VERSION,
     DatabaseVersionError,
     connect_database,
@@ -39,7 +38,15 @@ def test_initialize_database_creates_current_schema(tmp_path: Path) -> None:
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             ).fetchall()
         }
+        paper_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(papers)").fetchall()
+        }
+        artifact_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(artifacts)").fetchall()
+        }
     assert {"papers", "artifacts", "processing_runs", "llm_calls"} <= tables
+    assert "metadata_sources_json" in paper_columns
+    assert "size_bytes" in artifact_columns
 
 
 def test_sha256_is_unique(tmp_path: Path) -> None:
@@ -91,19 +98,3 @@ def test_rejects_newer_database_schema(tmp_path: Path) -> None:
 
     with pytest.raises(DatabaseVersionError):
         initialize_database(database_path)
-
-
-def test_migrates_version_one_database(tmp_path: Path) -> None:
-    database_path = tmp_path / "passagen.db"
-    with connect_database(database_path) as connection:
-        connection.executescript(MIGRATIONS[1])
-        connection.execute("PRAGMA user_version = 1")
-
-    initialize_database(database_path)
-
-    with connect_database(database_path) as connection:
-        columns = {
-            row["name"] for row in connection.execute("PRAGMA table_info(artifacts)").fetchall()
-        }
-    assert current_version(database_path) == SCHEMA_VERSION
-    assert "size_bytes" in columns

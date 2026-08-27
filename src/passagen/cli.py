@@ -10,6 +10,7 @@ from rich.table import Table
 from passagen import __version__
 from passagen.config import ConfigError, Settings, load_settings
 from passagen.db import current_version, initialize_database
+from passagen.metadata_service import MetadataResolutionError, resolve_paper_metadata
 from passagen.models import PaperStatus
 from passagen.repository import (
     DatabaseNotInitializedError,
@@ -18,6 +19,11 @@ from passagen.repository import (
     list_papers,
 )
 from passagen.scanning import ScanDirectoryError, scan_directory
+from passagen.updating import (
+    LATEST_IMPLEMENTED_STATUS,
+    UpdateTargetError,
+    update_papers,
+)
 
 app = typer.Typer(help="Manage paper PDFs and generate structured summaries.")
 config_app = typer.Typer(help="Inspect Passagen configuration.")
@@ -65,6 +71,9 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row("data_dir", str(settings.resolved_data_dir))
     table.add_row("database_path", str(settings.resolved_database_path))
     table.add_row("debug", str(settings.debug).lower())
+    table.add_row("metadata.first_pages", str(settings.metadata.first_pages))
+    table.add_row("metadata.crossref", str(settings.metadata.crossref.enabled).lower())
+    table.add_row("metadata.arxiv", str(settings.metadata.arxiv.enabled).lower())
     console.print(table)
 
 
@@ -147,6 +156,83 @@ def list_command(
     console.print(table)
 
 
+@app.command("metadata")
+def metadata_command(
+    ctx: typer.Context,
+    paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
+    refresh: Annotated[bool, typer.Option(help="Refresh already resolved metadata.")] = False,
+) -> None:
+    settings = _state(ctx).settings
+    try:
+        result = resolve_paper_metadata(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+            paper_id,
+            settings.metadata,
+            refresh=refresh,
+        )
+    except (DatabaseNotInitializedError, MetadataResolutionError) as exc:
+        console.print(f"[red]Metadata error:[/red] {exc}", highlight=False)
+        raise typer.Exit(code=1) from exc
+
+    for warning in result.warnings:
+        console.print(f"[yellow]Warning:[/yellow] {warning}", highlight=False)
+    if result.updated:
+        console.print(f"Metadata resolved for {paper_id}.")
+    else:
+        console.print(f"Metadata already resolved for {paper_id}; use --refresh to update.")
+
+
+@app.command("update")
+def update_command(
+    ctx: typer.Context,
+    paper_id: Annotated[
+        str | None,
+        typer.Argument(help="Paper ID. Omit to update every paper."),
+    ] = None,
+    refresh: Annotated[
+        bool,
+        typer.Option(help="Refresh already completed stages."),
+    ] = False,
+) -> None:
+    settings = _state(ctx).settings
+    try:
+        result = update_papers(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+            settings.metadata,
+            paper_id,
+            refresh=refresh,
+        )
+    except (DatabaseNotInitializedError, UpdateTargetError) as exc:
+        console.print(f"[red]Update error:[/red] {exc}", highlight=False)
+        raise typer.Exit(code=1) from exc
+
+    for paper in result.updated:
+        console.print(
+            f"Updated {paper.id} to {paper.status.value}: {paper.title or paper.original_filename}",
+            markup=False,
+        )
+    for warning in result.warnings:
+        console.print(
+            f"[yellow]Warning:[/yellow] {warning.paper_id}: {warning.message}",
+            highlight=False,
+        )
+    for failure in result.failures:
+        console.print(
+            f"[red]Failed:[/red] {failure.paper_id}: {failure.message}",
+            highlight=False,
+        )
+    console.print(
+        f"Target: {LATEST_IMPLEMENTED_STATUS.value}; "
+        f"updated: {len(result.updated)}, "
+        f"skipped: {len(result.skipped)}, "
+        f"failed: {len(result.failures)}"
+    )
+    if result.failures:
+        raise typer.Exit(code=1)
+
+
 @app.command("show")
 def show(ctx: typer.Context, paper_id: Annotated[str, typer.Argument(help="Paper ID.")]) -> None:
     settings = _state(ctx).settings
@@ -173,7 +259,19 @@ def _paper_details(settings: Settings, paper: PaperRecord) -> list[tuple[str, st
         ("id", paper.id),
         ("status", paper.status.value),
         ("title", paper.title or "-"),
+        ("authors", "; ".join(paper.authors) if paper.authors else "-"),
         ("year", str(paper.year) if paper.year is not None else "-"),
+        ("venue", paper.venue or "-"),
+        ("doi", paper.doi or "-"),
+        ("arxiv_id", paper.arxiv_id or "-"),
+        ("source_url", paper.source_url or "-"),
+        (
+            "metadata_sources",
+            ", ".join(
+                f"{field}={source}" for field, source in sorted(paper.metadata_sources.items())
+            )
+            or "-",
+        ),
         ("original_filename", paper.original_filename),
         ("pdf_sha256", paper.pdf_sha256),
         (

@@ -19,9 +19,10 @@ Passagen 是一个通过 CLI 整理 paper PDF，并调用 LLM 生成结构化英
 扫描 PDF
   -> 计算 SHA-256
   -> 去重并将 PDF 导入受管理存储
-  -> 解析 PDF 和提取候选元数据
+  -> 轻量读取 PDF metadata 和前几页，提取候选标识
   -> 使用 DOI 查询 Crossref，使用 arXiv ID 查询 arXiv API
-  -> 补全或合并论文记录
+  -> 补全论文记录
+  -> 全文结构解析
   -> 按章节切分正文
   -> LLM 生成结构化摘要
   -> Schema 校验和有限修复
@@ -32,7 +33,7 @@ Passagen 是一个通过 CLI 整理 paper PDF，并调用 LLM 生成结构化英
 处理状态至少包括：
 
 ```text
-discovered -> parsed -> metadata_resolved -> summarized -> outlined -> completed
+discovered -> metadata_resolved -> parsed -> summarized -> outlined -> completed
                                                                   \-> failed
 ```
 
@@ -44,13 +45,17 @@ discovered -> parsed -> metadata_resolved -> summarized -> outlined -> completed
 
 ```bash
 passagen scan <directory>       # 扫描目录并登记新 PDF
+passagen metadata <paper-id>    # 识别标识并补全基础元数据
+passagen update [paper-id] [--refresh]  # 推进指定或全部论文；可刷新已有阶段
 passagen process [paper-id]     # 处理全部待处理论文或指定论文
 passagen retry [paper-id]       # 重试失败任务
 passagen list                   # 查看论文和处理状态
 passagen show <paper-id>        # 查看元数据和产物路径
 ```
 
-`scan` 和 `process` 分离，便于在调用 LLM 前检查识别出的论文，也可以提供 `passagen run <directory>` 依次执行二者。
+`metadata` 用于显式执行或 `--refresh` 单篇元数据阶段。`update` 是幂等的阶段编排入口：指定 `paper-id` 时只推进该 Paper，省略时推进数据库中所有落后于当前开发前沿的 Paper，已达到或超过目标状态的记录直接跳过；传入 `--refresh` 时重新执行已有阶段，同时保留 Paper 当前状态。批量中单篇失败不阻断其余记录，但命令最终返回非零状态。当前前沿是 `metadata_resolved`，实现 M4 后将扩展到 `parsed`，不改变命令接口。
+
+`scan` 和处理流程保持分离，便于在调用外部服务前检查新论文。M7 的 `passagen run <directory>` 将组合 scan 与 update，形成从目录开始的完整入口。
 
 ## 论文标识和去重
 
@@ -66,7 +71,7 @@ passagen show <paper-id>        # 查看元数据和产物路径
 - arXiv ID 相同；
 - SHA-256 相同。
 
-标题只用于辅助查找和人工检查，不单独作为自动去重依据。同一论文的不同 PDF 版本可能具有不同 SHA-256，此时依靠 DOI 或 arXiv ID 合并，同时保留各版本的受管理 PDF artifact。这样后续补全 DOI 或 arXiv ID 时不会改变 `paper_id`，PDF 的内容寻址路径也不依赖论文元数据。
+标题只用于辅助查找和人工检查，不单独作为自动去重依据。首版按一篇 Paper 对应一个受管理 PDF 处理，不实现同一论文多版本合并；后续补全 DOI 或 arXiv ID 不改变 `paper_id` 和 PDF 的内容寻址路径。
 
 ## 元数据
 
@@ -93,7 +98,9 @@ passagen show <paper-id>        # 查看元数据和产物路径
 - DOI 使用 Crossref REST API。
 - arXiv ID 使用 arXiv API。
 - 同时具有 DOI 和 arXiv ID 时可以查询两者，Crossref 用于已发表版本的 venue、year 和 DOI 元数据，arXiv 用于预印本标识和版本信息。
-- 没有可靠标识时只使用 PDF parser 的结果，不根据模糊标题自动查询或合并论文。
+- 没有可靠标识时只使用 PDF 本地 metadata 和轻量文本结果，不根据模糊标题自动查询论文。
+
+本地书目信息采用分层提取：先使用可信的 PDF metadata/XMP；title 缺失或明显为生成器占位值时，从前几页的字体大小和坐标选择标题块，并用原文件名候选校验；author metadata 缺失时，从标题下方的姓名块提取并过滤机构、URL 和脚注标记。venue 与非 DOI/arXiv source URL 可以从出版方封面文字补充。全文结构和章节边界仍由 M4 parser 负责。
 
 字段合并优先级为 `user > crossref > arxiv > pdf`。每个字段记录实际来源 `user`、`crossref`、`arxiv` 或 `pdf`，不能只记录整条论文的单一来源。
 
@@ -272,25 +279,28 @@ Passagen 默认把配置和所有受管理数据限制在启动命令时的当�
 - 相对覆盖路径以执行命令时的当前工作目录为基准。
 - API key 继续只从指定环境变量读取，不写入 `passagen.yaml`。
 
-当前最小配置使用 `passagen` 顶层分区：
+当前配置使用独立的运行时和 metadata 分区：
 
 ```yaml
 passagen:
   data_dir: data
   database_path: null
   debug: false
+metadata:
+  first_pages: 2
+  timeout_seconds: 10
+  crossref:
+    enabled: true
+    base_url: https://api.crossref.org
+    mailto: null
+  arxiv:
+    enabled: true
+    base_url: https://export.arxiv.org
 ```
 
-配置文件使用 `yaml.safe_load` 解析。根节点和各配置分区必须是 mapping，不允许使用可执行 Python tag。后续 LLM、parser 和 pipeline 配置应增加独立顶层分区，避免把所有字段堆入 `passagen`：
+配置文件使用 `yaml.safe_load` 解析。根节点和各配置分区必须是 mapping，不允许使用可执行 Python tag。当前接受 `passagen` 和 `metadata` 分区；后续实现 LLM、parser 和 pipeline 时再增加对应顶层分区，避免把所有字段堆入 `passagen`。
 
-```yaml
-passagen: {}
-parser: {}
-llm: {}
-pipeline: {}
-```
-
-当前配置优先级为：CLI 参数 > 环境变量 > YAML > 内置默认值。
+当前配置优先级为：CLI 参数 > 环境变量 > YAML > 内置默认值。嵌套环境变量使用双下划线，例如 `PASSAGEN_METADATA__TIMEOUT_SECONDS=5`。
 
 ## 数据存储
 

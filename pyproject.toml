@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Manage paper PDFs and generate structured summaries"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx>=0.28,<1",
     "pydantic-settings>=2.8,<3",
+    "pymupdf>=1.25,<2",
     "pyyaml>=6,<7",
     "rich>=13.9,<15",
     "typer>=0.15,<1",

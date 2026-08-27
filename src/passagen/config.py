@@ -5,19 +5,48 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_CONFIG_PATH = Path("passagen.yaml")
 ENV_PREFIX = "PASSAGEN_"
 
 
+class CrossrefSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    base_url: str = "https://api.crossref.org"
+    mailto: str | None = None
+
+
+class ArxivSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    base_url: str = "https://export.arxiv.org"
+
+
+class MetadataSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    first_pages: int = Field(default=2, ge=1, le=10)
+    timeout_seconds: float = Field(default=10.0, gt=0)
+    crossref: CrossrefSettings = Field(default_factory=CrossrefSettings)
+    arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix=ENV_PREFIX, extra="forbid")
+    model_config = SettingsConfigDict(
+        env_prefix=ENV_PREFIX,
+        env_nested_delimiter="__",
+        extra="forbid",
+    )
 
     data_dir: Path = Path("data")
     database_path: Path | None = None
     debug: bool = False
+    metadata: MetadataSettings = Field(default_factory=MetadataSettings)
 
     @property
     def resolved_data_dir(self) -> Path:
@@ -41,11 +70,7 @@ def load_settings(
     path = (config_path or DEFAULT_CONFIG_PATH).expanduser()
     values = _read_config(path) if path.exists() else {}
 
-    # BaseSettings gives constructor values priority over environment variables.
-    # Remove file values that have an environment override before validation.
-    for field_name in Settings.model_fields:
-        if f"{ENV_PREFIX}{field_name}".upper() in os.environ:
-            values.pop(field_name, None)
+    _remove_environment_overrides(values)
     values.update({key: value for key, value in (overrides or {}).items() if value is not None})
 
     try:
@@ -66,7 +91,33 @@ def _read_config(path: Path) -> dict[str, Any]:
     if not isinstance(document, dict):
         raise ConfigError(f"Config {path} must contain a mapping")
 
-    values = document.get("passagen", document)
-    if not isinstance(values, dict):
+    if "passagen" not in document:
+        return document
+
+    unknown_sections = set(document) - {"passagen", "metadata"}
+    if unknown_sections:
+        names = ", ".join(sorted(str(name) for name in unknown_sections))
+        raise ConfigError(f"Config {path} contains unknown sections: {names}")
+
+    passagen_values = document["passagen"]
+    if not isinstance(passagen_values, dict):
         raise ConfigError(f"Config {path} section 'passagen' must contain a mapping")
+    values = dict(passagen_values)
+    if "metadata" in document:
+        values["metadata"] = document["metadata"]
     return values
+
+
+def _remove_environment_overrides(values: dict[str, Any]) -> None:
+    for environment_name in os.environ:
+        if not environment_name.startswith(ENV_PREFIX):
+            continue
+        path = environment_name.removeprefix(ENV_PREFIX).lower().split("__")
+        current: dict[str, Any] = values
+        for part in path[:-1]:
+            nested = current.get(part)
+            if not isinstance(nested, dict):
+                break
+            current = nested
+        else:
+            current.pop(path[-1], None)
