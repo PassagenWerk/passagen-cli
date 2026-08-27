@@ -13,3 +13,6 @@ data/
 dist/
 
 tmp/
+
+# Local runtime configuration may contain private endpoints or identifiers.
+passagen.yaml

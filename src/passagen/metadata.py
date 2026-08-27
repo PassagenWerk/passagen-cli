@@ -77,6 +77,10 @@ class MetadataLookup(Protocol):
     def lookup(self, identifier: str) -> BibliographicMetadata | None: ...
 
 
+class PdfMetadataLookup(Protocol):
+    def extract(self, path: Path) -> BibliographicMetadata | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class _TextSpan:
     page: int
@@ -434,6 +438,49 @@ class ArxivClient:
             return client.get(url, params=params)
 
 
+class GrobidClient:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        timeout_seconds: float,
+        client: httpx.Client | None = None,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout_seconds = timeout_seconds
+        self.client = client
+
+    def extract(self, path: Path) -> BibliographicMetadata | None:
+        try:
+            with path.open("rb") as pdf_file:
+                response = self._post(
+                    f"{self.base_url}/api/processHeaderDocument",
+                    files={"input": (path.name, pdf_file, "application/pdf")},
+                    data={"consolidateHeader": "0"},
+                )
+            if response.status_code == 204:
+                return None
+            response.raise_for_status()
+            root = ET.fromstring(response.content)
+        except (OSError, httpx.HTTPError, ET.ParseError) as exc:
+            raise MetadataLookupError(
+                f"GROBID header extraction failed for {path.name}: {exc}"
+            ) from exc
+        return _grobid_metadata(root)
+
+    def _post(
+        self,
+        url: str,
+        *,
+        files: dict[str, tuple[str, Any, str]],
+        data: dict[str, str],
+    ) -> httpx.Response:
+        if self.client is not None:
+            return self.client.post(url, files=files, data=data)
+        with httpx.Client(timeout=self.timeout_seconds, headers=_http_headers()) as client:
+            return client.post(url, files=files, data=data)
+
+
 def merge_metadata(*items: BibliographicMetadata) -> BibliographicMetadata:
     title: str | None = None
     authors: tuple[str, ...] = ()
@@ -527,6 +574,97 @@ def _arxiv_metadata(entry: ET.Element, identifier: str) -> BibliographicMetadata
     )
 
 
+def _grobid_metadata(root: ET.Element) -> BibliographicMetadata:
+    namespace = {"tei": "http://www.tei-c.org/ns/1.0"}
+    file_desc = root.find("./tei:teiHeader/tei:fileDesc", namespace)
+    bibl_struct = (
+        file_desc.find("./tei:sourceDesc/tei:biblStruct", namespace)
+        if file_desc is not None
+        else None
+    )
+    analytic = bibl_struct.find("./tei:analytic", namespace) if bibl_struct is not None else None
+    title_element = (
+        file_desc.find("./tei:titleStmt/tei:title", namespace) if file_desc is not None else None
+    )
+    if title_element is None and analytic is not None:
+        title_element = analytic.find("./tei:title[@type='main']", namespace)
+    if title_element is None and analytic is not None:
+        title_element = analytic.find("./tei:title", namespace)
+    title = _element_content(title_element)
+    author_elements = (
+        file_desc.findall("./tei:titleStmt/tei:author", namespace) if file_desc is not None else []
+    )
+    if not author_elements and analytic is not None:
+        author_elements = analytic.findall("./tei:author", namespace)
+    authors = tuple(
+        name
+        for author in author_elements
+        if (name := _grobid_author(author, namespace)) is not None
+    )
+    doi = _grobid_identifier(bibl_struct, "doi", namespace)
+    arxiv_id = _grobid_identifier(bibl_struct, "arxiv", namespace)
+    venue = _element_content(
+        bibl_struct.find("./tei:monogr/tei:title", namespace) if bibl_struct is not None else None
+    )
+    date = (
+        bibl_struct.find("./tei:monogr/tei:imprint/tei:date", namespace)
+        if bibl_struct is not None
+        else None
+    )
+    if date is None and file_desc is not None:
+        date = file_desc.find("./tei:publicationStmt/tei:date", namespace)
+    year = _year_from_text(date.get("when") or _element_content(date)) if date is not None else None
+    values: dict[str, object] = {
+        "title": title,
+        "authors": authors,
+        "year": year,
+        "venue": venue,
+        "doi": doi,
+        "arxiv_id": arxiv_id,
+    }
+    return BibliographicMetadata(
+        title=title,
+        authors=authors,
+        year=year,
+        venue=venue,
+        doi=doi,
+        arxiv_id=arxiv_id,
+        sources={name: "grobid" for name, value in values.items() if value},
+    )
+
+
+def _grobid_author(author: ET.Element, namespace: dict[str, str]) -> str | None:
+    person = author.find("./tei:persName", namespace)
+    if person is None:
+        return _element_content(author)
+    parts = [
+        content
+        for element in person.findall("./tei:forename", namespace)
+        if (content := _element_content(element)) is not None
+    ]
+    surname = _element_content(person.find("./tei:surname", namespace))
+    if surname is not None:
+        parts.append(surname)
+    return _clean_text(" ".join(parts))
+
+
+def _grobid_identifier(
+    bibl_struct: ET.Element | None,
+    identifier_type: str,
+    namespace: dict[str, str],
+) -> str | None:
+    if bibl_struct is None:
+        return None
+    for element in bibl_struct.findall(".//tei:idno", namespace):
+        if element.get("type", "").lower() != identifier_type:
+            continue
+        value = _element_content(element)
+        if value is None:
+            return None
+        return normalize_doi(value) if identifier_type == "doi" else normalize_arxiv_id(value)
+    return None
+
+
 def _crossref_year(message: dict[str, Any]) -> int | None:
     for field_name in ("published-print", "published-online", "published", "issued"):
         value = message.get(field_name)
@@ -553,6 +691,10 @@ def _first_string(value: object) -> str | None:
 def _element_text(element: ET.Element, path: str) -> str | None:
     child = element.find(path)
     return _clean_text(child.text) if child is not None else None
+
+
+def _element_content(element: ET.Element | None) -> str | None:
+    return _clean_text("".join(element.itertext())) if element is not None else None
 
 
 def _clean_text(value: object) -> str | None:
@@ -584,6 +726,11 @@ def _extract_year(value: object) -> int | None:
         return None
     match = re.search(r"(?:D:)?(?P<year>19\d{2}|20\d{2})", text)
     return int(match.group("year")) if match is not None else None
+
+
+def _year_from_text(value: str | None) -> int | None:
+    match = re.search(r"\b(19\d{2}|20\d{2})\b", value or "")
+    return int(match.group(0)) if match is not None else None
 
 
 def _crossref_authors(value: object) -> tuple[str, ...]:

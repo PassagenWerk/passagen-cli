@@ -7,11 +7,12 @@ import httpx
 import pymupdf
 import pytest
 
-from passagen.config import MetadataSettings
+from passagen.config import GrobidSettings, MetadataSettings
 from passagen.metadata import (
     ArxivClient,
     BibliographicMetadata,
     CrossrefClient,
+    GrobidClient,
     MetadataLookupError,
     extract_arxiv_id,
     extract_doi,
@@ -202,7 +203,58 @@ def test_arxiv_client_parses_exact_id_response() -> None:
     assert metadata.sources["arxiv_id"] == "arxiv"
 
 
-def test_clients_handle_not_found_and_invalid_responses() -> None:
+def test_grobid_client_posts_pdf_and_parses_tei_header(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "paper.pdf"
+    write_pdf(pdf_path, "Paper body")
+    tei = b"""<?xml version="1.0" encoding="UTF-8"?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0">
+  <teiHeader>
+    <fileDesc>
+      <titleStmt>
+        <title>Structured <hi>Paper</hi> Title</title>
+      </titleStmt>
+      <sourceDesc>
+        <biblStruct>
+          <analytic>
+            <author><persName><forename>Ada</forename><surname>Lovelace</surname></persName></author>
+            <author><persName><forename>Alan</forename><surname>Turing</surname></persName></author>
+            <idno type="DOI">10.1000/GROBID.1</idno>
+            <idno type="arXiv">2401.12345v2</idno>
+          </analytic>
+          <monogr>
+            <title>Test Conference</title>
+            <imprint><date when="2025-03-01" /></imprint>
+          </monogr>
+        </biblStruct>
+      </sourceDesc>
+    </fileDesc>
+  </teiHeader>
+</TEI>"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/processHeaderDocument"
+        assert b'form-data; name="input"; filename="paper.pdf"' in request.content
+        assert b'form-data; name="consolidateHeader"' in request.content
+        return httpx.Response(200, content=tei)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        metadata = GrobidClient(
+            base_url="https://grobid.test",
+            timeout_seconds=1,
+            client=http_client,
+        ).extract(pdf_path)
+
+    assert metadata is not None
+    assert metadata.title == "Structured Paper Title"
+    assert metadata.authors == ("Ada Lovelace", "Alan Turing")
+    assert metadata.year == 2025
+    assert metadata.venue == "Test Conference"
+    assert metadata.doi == "10.1000/grobid.1"
+    assert metadata.arxiv_id == "2401.12345"
+    assert metadata.sources["title"] == "grobid"
+
+
+def test_clients_handle_not_found_and_invalid_responses(tmp_path: Path) -> None:
     def crossref_not_found(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404)
 
@@ -220,6 +272,19 @@ def test_clients_handle_not_found_and_invalid_responses() -> None:
         ).lookup("10.1000/missing")
     assert result is None
 
+    def grobid_empty(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(204)
+
+    pdf_path = tmp_path / "paper.pdf"
+    write_pdf(pdf_path, "Paper body")
+    with httpx.Client(transport=httpx.MockTransport(grobid_empty)) as client:
+        result = GrobidClient(
+            base_url="https://grobid.test",
+            timeout_seconds=1,
+            client=client,
+        ).extract(pdf_path)
+    assert result is None
+
     with httpx.Client(transport=httpx.MockTransport(arxiv_empty)) as client:
         result = ArxivClient(
             base_url="https://export.arxiv.test",
@@ -229,12 +294,15 @@ def test_clients_handle_not_found_and_invalid_responses() -> None:
     assert result is None
 
 
-def test_clients_convert_service_and_parse_errors() -> None:
+def test_clients_convert_service_and_parse_errors(tmp_path: Path) -> None:
     def service_error(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503)
 
     def invalid_atom(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"not XML")
+
+    pdf_path = tmp_path / "paper.pdf"
+    write_pdf(pdf_path, "Paper body")
 
     with (
         httpx.Client(transport=httpx.MockTransport(service_error)) as client,
@@ -256,6 +324,16 @@ def test_clients_convert_service_and_parse_errors() -> None:
             client=client,
         ).lookup("2401.99999")
 
+    with (
+        httpx.Client(transport=httpx.MockTransport(service_error)) as client,
+        pytest.raises(MetadataLookupError, match="GROBID header extraction failed"),
+    ):
+        GrobidClient(
+            base_url="https://grobid.test",
+            timeout_seconds=1,
+            client=client,
+        ).extract(pdf_path)
+
 
 def test_metadata_merge_uses_later_provider_precedence() -> None:
     local = BibliographicMetadata(
@@ -263,6 +341,11 @@ def test_metadata_merge_uses_later_provider_precedence() -> None:
         authors=("PDF Author",),
         arxiv_id="2401.12345",
         sources={"title": "pdf", "authors": "pdf", "arxiv_id": "pdf"},
+    )
+    grobid = BibliographicMetadata(
+        title="GROBID title",
+        venue="GROBID Conference",
+        sources={"title": "grobid", "venue": "grobid"},
     )
     arxiv = BibliographicMetadata(
         title="arXiv title",
@@ -276,13 +359,15 @@ def test_metadata_merge_uses_later_provider_precedence() -> None:
         sources={"title": "crossref", "doi": "crossref"},
     )
 
-    merged = merge_metadata(local, arxiv, crossref)
+    merged = merge_metadata(local, grobid, arxiv, crossref)
 
     assert merged.title == "Published title"
     assert merged.authors == ("arXiv Author",)
     assert merged.doi == "10.1000/example"
+    assert merged.venue == "GROBID Conference"
     assert merged.sources["title"] == "crossref"
     assert merged.sources["authors"] == "arxiv"
+    assert merged.sources["venue"] == "grobid"
 
 
 @dataclass(slots=True)
@@ -296,6 +381,150 @@ class FakeLookup:
         if self.error:
             raise MetadataLookupError(self.error)
         return self.result
+
+
+@dataclass(slots=True)
+class FakePdfLookup:
+    result: BibliographicMetadata | None = None
+    error: str | None = None
+    paths: list[Path] = field(default_factory=list)
+
+    def extract(self, path: Path) -> BibliographicMetadata | None:
+        self.paths.append(path)
+        if self.error:
+            raise MetadataLookupError(self.error)
+        return self.result
+
+
+def test_resolve_metadata_uses_grobid_when_local_identity_is_incomplete(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "inbox" / "paper.pdf"
+    write_pdf(source_path, "Paper body", title="Local Title")
+    data_dir = tmp_path / "data"
+    database_path = data_dir / "passagen.db"
+    paper = scan_directory(
+        source_path.parent,
+        data_dir=data_dir,
+        database_path=database_path,
+    ).imported[0]
+    grobid = FakePdfLookup(
+        BibliographicMetadata(
+            title="Published Paper",
+            authors=("Ada Lovelace",),
+            year=2025,
+            venue="Test Conference",
+            doi="10.1000/grobid",
+            sources={
+                "title": "grobid",
+                "authors": "grobid",
+                "year": "grobid",
+                "venue": "grobid",
+                "doi": "grobid",
+            },
+        )
+    )
+    crossref = FakeLookup(
+        BibliographicMetadata(
+            title="Published Paper",
+            doi="10.1000/grobid",
+            sources={"title": "crossref", "doi": "crossref"},
+        )
+    )
+
+    result = resolve_paper_metadata(
+        database_path,
+        data_dir,
+        paper.id,
+        MetadataSettings(grobid=GrobidSettings(enabled=True)),
+        crossref=crossref,
+        arxiv=FakeLookup(error="must not be called"),
+        grobid=grobid,
+    )
+
+    assert result.paper.title == "Published Paper"
+    assert result.paper.authors == ("Ada Lovelace",)
+    assert result.paper.venue == "Test Conference"
+    assert result.paper.doi == "10.1000/grobid"
+    assert result.paper.metadata_sources["title"] == "crossref"
+    assert result.paper.metadata_sources["authors"] == "grobid"
+    assert result.paper.metadata_sources["venue"] == "grobid"
+    assert crossref.identifiers == ["10.1000/grobid"]
+    assert len(grobid.paths) == 1
+
+
+def test_resolve_metadata_uses_grobid_to_recover_crossref_conflict(tmp_path: Path) -> None:
+    source_path = tmp_path / "inbox" / "paper.pdf"
+    write_pdf(
+        source_path,
+        "DOI: 10.1145/3789240",
+        title="Local Paper Title",
+    )
+    data_dir = tmp_path / "data"
+    database_path = data_dir / "passagen.db"
+    paper = scan_directory(
+        source_path.parent,
+        data_dir=data_dir,
+        database_path=database_path,
+    ).imported[0]
+    crossref = FakeLookup(
+        BibliographicMetadata(
+            title="Published Paper",
+            doi="10.1145/3789240.3829171",
+            sources={"title": "crossref", "doi": "crossref"},
+        )
+    )
+    grobid = FakePdfLookup(
+        BibliographicMetadata(
+            title="Published Paper",
+            authors=("Local Author",),
+            doi="10.1145/3789240.3829171",
+            sources={"title": "grobid", "authors": "grobid", "doi": "grobid"},
+        )
+    )
+
+    result = resolve_paper_metadata(
+        database_path,
+        data_dir,
+        paper.id,
+        MetadataSettings(grobid=GrobidSettings(enabled=True)),
+        crossref=crossref,
+        arxiv=FakeLookup(error="must not be called"),
+        grobid=grobid,
+    )
+
+    assert result.paper.title == "Published Paper"
+    assert result.paper.doi == "10.1145/3789240.3829171"
+    assert result.paper.metadata_sources["title"] == "crossref"
+    assert crossref.identifiers == ["10.1145/3789240", "10.1145/3789240.3829171"]
+    assert len(grobid.paths) == 1
+    assert not result.warnings
+
+
+def test_resolve_metadata_continues_when_grobid_fails(tmp_path: Path) -> None:
+    source_path = tmp_path / "inbox" / "paper.pdf"
+    write_pdf(source_path, "Paper body", title="Local Title")
+    data_dir = tmp_path / "data"
+    database_path = data_dir / "passagen.db"
+    paper = scan_directory(
+        source_path.parent,
+        data_dir=data_dir,
+        database_path=database_path,
+    ).imported[0]
+
+    result = resolve_paper_metadata(
+        database_path,
+        data_dir,
+        paper.id,
+        MetadataSettings(grobid=GrobidSettings(enabled=True)),
+        crossref=FakeLookup(error="must not be called"),
+        arxiv=FakeLookup(error="must not be called"),
+        grobid=FakePdfLookup(error="GROBID unavailable"),
+    )
+
+    assert result.paper.title == "Local Title"
+    assert result.paper.metadata_sources["title"] == "pdf"
+    assert result.warnings == ("GROBID unavailable",)
 
 
 def test_resolve_metadata_queries_both_providers_and_persists_sources(tmp_path: Path) -> None:

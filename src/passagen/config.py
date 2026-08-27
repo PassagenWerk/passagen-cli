@@ -27,6 +27,13 @@ class ArxivSettings(BaseModel):
     base_url: str = "https://export.arxiv.org"
 
 
+class GrobidSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    base_url: str = "http://localhost:8070"
+
+
 class MetadataSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -34,6 +41,7 @@ class MetadataSettings(BaseModel):
     timeout_seconds: float = Field(default=10.0, gt=0)
     crossref: CrossrefSettings = Field(default_factory=CrossrefSettings)
     arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
+    grobid: GrobidSettings = Field(default_factory=GrobidSettings)
 
 
 class Settings(BaseSettings):

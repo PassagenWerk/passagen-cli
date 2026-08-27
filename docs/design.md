@@ -20,6 +20,7 @@ Passagen 是一个通过 CLI 整理 paper PDF，并调用 LLM 生成结构化英
   -> 计算 SHA-256
   -> 去重并将 PDF 导入受管理存储
   -> 轻量读取 PDF metadata 和前几页，提取候选标识
+  -> 本地身份信息不足时可选调用 GROBID header extraction
   -> 使用 DOI 查询 Crossref，使用 arXiv ID 查询 arXiv API
   -> 补全论文记录
   -> 全文结构解析
@@ -91,22 +92,24 @@ passagen show <paper-id>        # 查看元数据和产物路径
 
 `original_filename` 只用于展示和审计，不参与后续文件读取。数据库不保存扫描目录中的源路径。
 
-### Crossref 与 arXiv
+### GROBID、Crossref 与 arXiv
 
 优先从 PDF 中识别 DOI 或 arXiv ID，再按标识类型精确查询元数据：
 
 - DOI 使用 Crossref REST API。
 - arXiv ID 使用 arXiv API。
 - 同时具有 DOI 和 arXiv ID 时可以查询两者，Crossref 用于已发表版本的 venue、year 和 DOI 元数据，arXiv 用于预印本标识和版本信息。
-- 没有可靠标识时只使用 PDF 本地 metadata 和轻量文本结果，不根据模糊标题自动查询论文。
+- 可选 GROBID fallback 默认关闭；启用后，本地缺少 title、authors 或 DOI/arXiv ID 时调用 `processHeaderDocument`，并使用其 TEI header 结果补充身份信息。
+- Crossref 标题与当前 PDF/GROBID 标题冲突时，GROBID 可作为第二次校验；若 GROBID 给出不同 DOI，则使用新 DOI 重新执行 Crossref 精确查询。
+- 没有可靠标识且 GROBID 未启用或未提取到标识时，只使用已有本地结果，不根据模糊标题自动查询论文。
 
 本地书目信息采用分层提取：先使用可信的 PDF metadata/XMP；title 缺失或明显为生成器占位值时，从前几页的字体大小和坐标选择标题块，并用原文件名候选校验；author metadata 缺失时，从标题下方的姓名块提取并过滤机构、URL 和脚注标记。venue 与非 DOI/arXiv source URL 可以从出版方封面文字补充。全文结构和章节边界仍由 M4 parser 负责。
 
-字段合并优先级为 `user > crossref > arxiv > pdf`。每个字段记录实际来源 `user`、`crossref`、`arxiv` 或 `pdf`，不能只记录整条论文的单一来源。
+字段合并优先级为 `user > crossref > arxiv > grobid > pdf`。每个字段记录实际来源 `user`、`crossref`、`arxiv`、`grobid` 或 `pdf`，不能只记录整条论文的单一来源。
 
-Crossref 或 arXiv 请求失败、限流或未命中时，保留 PDF parser 已提取的元数据并继续处理。外部补全是 best-effort 能力，不是摘要流水线成功的前置条件。
+GROBID、Crossref 或 arXiv 请求失败、限流、未命中或返回无效内容时，保留已提取的元数据并继续处理。外部补全是 best-effort 能力，不是摘要流水线成功的前置条件。
 
-`metadata_resolved` 表示本地元数据已经标准化并完成可用的外部补全尝试，不表示 Crossref 或 arXiv 请求必须成功。
+`metadata_resolved` 表示本地元数据已经标准化并完成可用的外部补全尝试，不表示 GROBID、Crossref 或 arXiv 请求必须成功。
 
 ## PDF 导入与托管
 
@@ -272,7 +275,7 @@ Passagen 默认把配置和所有受管理数据限制在启动命令时的当�
 ./data/
 ```
 
-- 仓库提供可直接运行的最小 `passagen.yaml`；文件不存在或内容为空时仍可使用内置默认值和环境变量。
+- 仓库提供不含隐私信息的 `passagen.example.yaml` 模板；本地 `passagen.yaml` 不受 Git 跟踪，文件不存在或内容为空时仍可使用内置默认值和环境变量。
 - `data/` 保存数据库、受管理 PDF 和生成产物。
 - 默认运行不会读取或创建 `~/.config/passagen`、`~/.local/share/passagen` 等用户级目录。
 - `--config`、`--data-dir`、`PASSAGEN_DATA_DIR` 等显式覆盖仍然有效。
@@ -296,7 +299,12 @@ metadata:
   arxiv:
     enabled: true
     base_url: https://export.arxiv.org
+  grobid:
+    enabled: false
+    base_url: http://localhost:8070
 ```
+
+启用 `metadata.grobid.enabled` 前需单独启动 GROBID 服务，并确保 `base_url` 下的 `/api/processHeaderDocument` 可访问。Passagen 不负责启动或管理 GROBID 进程；默认关闭，因此现有本地与 Crossref/arXiv 流程不增加服务依赖。
 
 配置文件使用 `yaml.safe_load` 解析。根节点和各配置分区必须是 mapping，不允许使用可执行 Python tag。当前接受 `passagen` 和 `metadata` 分区；后续实现 LLM、parser 和 pipeline 时再增加对应顶层分区，避免把所有字段堆入 `passagen`。
 

@@ -9,9 +9,11 @@ from passagen.metadata import (
     ArxivClient,
     BibliographicMetadata,
     CrossrefClient,
+    GrobidClient,
     MetadataLookup,
     MetadataLookupError,
     PdfMetadataError,
+    PdfMetadataLookup,
     extract_pdf_metadata,
     merge_metadata,
 )
@@ -44,6 +46,7 @@ def resolve_paper_metadata(
     refresh: bool = False,
     crossref: MetadataLookup | None = None,
     arxiv: MetadataLookup | None = None,
+    grobid: PdfMetadataLookup | None = None,
 ) -> MetadataResolutionResult:
     paper = get_paper(database_path, paper_id)
     if paper is None:
@@ -66,9 +69,57 @@ def resolve_paper_metadata(
         raise MetadataResolutionError(str(exc)) from exc
 
     warnings: list[str] = []
+    grobid_client = grobid or GrobidClient(
+        base_url=settings.grobid.base_url,
+        timeout_seconds=settings.timeout_seconds,
+    )
+    grobid_attempted = False
+    grobid_metadata = BibliographicMetadata()
+    if settings.grobid.enabled and _needs_grobid(local):
+        grobid_metadata = _extract_grobid(pdf_path, grobid_client, warnings)
+        grobid_attempted = True
+
+    candidate = merge_metadata(local, grobid_metadata)
+    crossref_client = crossref or CrossrefClient(
+        base_url=settings.crossref.base_url,
+        timeout_seconds=settings.timeout_seconds,
+        mailto=settings.crossref.mailto,
+    )
+    queried_doi = candidate.doi
+    crossref_metadata = _lookup(
+        "Crossref",
+        queried_doi,
+        crossref_client,
+        enabled=settings.crossref.enabled,
+        warnings=warnings,
+    )
+
+    if (
+        not _titles_match(candidate.title, crossref_metadata.title)
+        and settings.grobid.enabled
+        and not grobid_attempted
+    ):
+        grobid_metadata = _extract_grobid(pdf_path, grobid_client, warnings)
+        grobid_attempted = True
+        candidate = merge_metadata(local, grobid_metadata)
+        if candidate.doi != queried_doi:
+            queried_doi = candidate.doi
+            crossref_metadata = _lookup(
+                "Crossref",
+                queried_doi,
+                crossref_client,
+                enabled=settings.crossref.enabled,
+                warnings=warnings,
+            )
+
+    if not _titles_match(candidate.title, crossref_metadata.title):
+        warnings.append(
+            f"Crossref title does not match PDF title for {queried_doi}; ignoring response"
+        )
+        crossref_metadata = BibliographicMetadata()
     arxiv_metadata = _lookup(
         "arXiv",
-        local.arxiv_id,
+        candidate.arxiv_id,
         arxiv
         or ArxivClient(
             base_url=settings.arxiv.base_url,
@@ -77,25 +128,14 @@ def resolve_paper_metadata(
         enabled=settings.arxiv.enabled,
         warnings=warnings,
     )
-    crossref_metadata = _lookup(
-        "Crossref",
-        local.doi,
-        crossref
-        or CrossrefClient(
-            base_url=settings.crossref.base_url,
-            timeout_seconds=settings.timeout_seconds,
-            mailto=settings.crossref.mailto,
-        ),
-        enabled=settings.crossref.enabled,
-        warnings=warnings,
-    )
-    if not _titles_match(local.title, crossref_metadata.title):
-        warnings.append(
-            f"Crossref title does not match PDF title for {local.doi}; ignoring response"
-        )
-        crossref_metadata = BibliographicMetadata()
     existing = _existing_metadata(paper)
-    metadata = merge_metadata(local, arxiv_metadata, crossref_metadata, existing)
+    metadata = merge_metadata(
+        local,
+        grobid_metadata,
+        arxiv_metadata,
+        crossref_metadata,
+        existing,
+    )
     target_status = (
         PaperStatus.METADATA_RESOLVED
         if paper.status in {PaperStatus.DISCOVERED, PaperStatus.FAILED}
@@ -127,6 +167,30 @@ def _lookup(
         warnings.append(f"{provider} did not find metadata for {identifier}")
         return BibliographicMetadata()
     return result
+
+
+def _extract_grobid(
+    pdf_path: Path,
+    client: PdfMetadataLookup,
+    warnings: list[str],
+) -> BibliographicMetadata:
+    try:
+        result = client.extract(pdf_path)
+    except MetadataLookupError as exc:
+        warnings.append(str(exc))
+        return BibliographicMetadata()
+    if result is None:
+        warnings.append(f"GROBID did not extract metadata from {pdf_path.name}")
+        return BibliographicMetadata()
+    return result
+
+
+def _needs_grobid(metadata: BibliographicMetadata) -> bool:
+    return (
+        metadata.title is None
+        or not metadata.authors
+        or (metadata.doi is None and metadata.arxiv_id is None)
+    )
 
 
 def _existing_metadata(paper: PaperRecord) -> BibliographicMetadata:

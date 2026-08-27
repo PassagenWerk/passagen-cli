@@ -13,3 +13,6 @@ metadata:
   arxiv:
     enabled: true
     base_url: https://export.arxiv.org
+  grobid:
+    enabled: false
+    base_url: http://localhost:8070

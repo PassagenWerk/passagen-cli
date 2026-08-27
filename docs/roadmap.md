@@ -62,7 +62,7 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 - 使用 `uv` 初始化 Python 项目和锁文件。
 - 建立 `src/passagen` 包、CLI 入口和测试目录。
 - 实现配置加载，支持配置文件、环境变量和命令行覆盖。
-- 默认从当前工作目录读取分区式 `passagen.yaml`，并将数据库和 artifact 写入当前目录的 `data/`。
+- 默认从当前工作目录读取不受 Git 跟踪的分区式 `passagen.yaml`，仓库提供 `passagen.example.yaml` 模板，并将数据库和 artifact 写入当前目录的 `data/`。
 - 建立统一日志和用户可读错误输出。
 - 配置格式化、静态检查和测试命令。
 
@@ -148,9 +148,10 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 - 从 metadata、首页和前几页中提取并标准化 DOI 与 arXiv ID。
 - 实现 Crossref REST API 客户端，使用 DOI 精确查询元数据。
 - 实现 arXiv API 客户端，使用规范化 arXiv ID 精确查询元数据。
-- 同时存在 DOI 和 arXiv ID 时查询两者，并按 `user > crossref > arxiv > pdf` 合并字段。
+- 实现默认关闭的 GROBID `processHeaderDocument` fallback，在本地身份信息不足或 Crossref 标题冲突时解析 TEI header。
+- 同时存在 DOI 和 arXiv ID 时查询两者，并按 `user > crossref > arxiv > grobid > pdf` 合并字段。
 - 保存 title、authors、year、venue、source URL、标识和字段来源。
-- Crossref 或 arXiv 未命中、限流或不可用时使用 PDF 本地元数据继续处理。
+- GROBID、Crossref 或 arXiv 未命中、限流或不可用时使用已有元数据继续处理。
 - 没有 DOI/arXiv ID 时仍推进到 `metadata_resolved`，不执行标题模糊查询。
 
 ### 交付物
@@ -158,7 +159,7 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 - `passagen metadata <paper-id> [--refresh]`
 - `passagen update [paper-id] [--refresh]`，将单篇或全部 Paper 推进到当前最新实现阶段，或刷新已有阶段
 - 轻量 PDF 标识提取器
-- Crossref 和 arXiv API 客户端
+- GROBID header、Crossref 和 arXiv API 客户端
 - 字段来源与元数据持久化
 
 ### 验收条件
@@ -166,9 +167,9 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 - DOI 只通过 Crossref 精确查询，arXiv ID 只通过 arXiv API 精确查询。
 - 不根据模糊标题自动定位或合并论文。
 - 任一 API 超时、限流和未命中都不会阻塞后续全文解析。
-- 每个元数据字段保存 `user`、`crossref`、`arxiv` 或 `pdf` 来源。
+- 每个元数据字段保存 `user`、`crossref`、`arxiv`、`grobid` 或 `pdf` 来源。
 - PDF metadata 为空且未找到标识时也能保存本地最小结果。
-- 使用 HTTP mock 覆盖 Crossref 和 arXiv 的成功、未命中、限流及服务错误。
+- 使用 HTTP mock 覆盖 GROBID、Crossref 和 arXiv 的成功、未命中、限流及服务错误。
 - `update <paper-id>` 只推进指定 Paper；省略 ID 时处理全部落后记录并跳过已完成项。
 - 批量 update 隔离单篇失败，输出 updated/skipped/failed 汇总并以非零状态报告部分失败。
 

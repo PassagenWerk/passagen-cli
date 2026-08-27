@@ -41,6 +41,9 @@ passagen: {}
 metadata:
   first_pages: 4
   timeout_seconds: 20
+  grobid:
+    enabled: true
+    base_url: http://grobid.test:8070
   crossref:
     enabled: false
 """
@@ -53,6 +56,8 @@ metadata:
     assert settings.metadata.timeout_seconds == 3.5
     assert settings.metadata.crossref.enabled is False
     assert settings.metadata.arxiv.enabled is True
+    assert settings.metadata.grobid.enabled is True
+    assert settings.metadata.grobid.base_url == "http://grobid.test:8070"
 
 
 def test_cli_override_has_highest_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
