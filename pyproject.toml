@@ -1,0 +1,68 @@
+[project]
+name = "passagen"
+version = "0.1.0"
+description = "Manage paper PDFs and generate structured summaries"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic-settings>=2.8,<3",
+    "pyyaml>=6,<7",
+    "rich>=13.9,<15",
+    "typer>=0.15,<1",
+]
+
+[project.scripts]
+passagen = "passagen.cli:app"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39,<2",
+    "pre-commit>=4.2,<5",
+    "pytest>=8.3,<9",
+    "pytest-cov>=6,<8",
+    "ruff>=0.11,<1",
+    "types-pyyaml>=6.0.12,<7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--import-mode=importlib",
+    "--cov=passagen",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["passagen"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.basedpyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+include = ["src", "tests"]
+extraPaths = ["src"]
+exclude = ["**/__pycache__"]
+venvPath = "."
+venv = ".venv"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/passagen"]

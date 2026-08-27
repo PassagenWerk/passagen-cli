@@ -1,0 +1,4 @@
+passagen:
+  data_dir: data
+  database_path: null
+  debug: false
