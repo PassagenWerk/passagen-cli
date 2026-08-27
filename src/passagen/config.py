@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,21 @@ class MetadataSettings(BaseModel):
     grobid: GrobidSettings = Field(default_factory=GrobidSettings)
 
 
+class ParserBackend(StrEnum):
+    AUTO = "auto"
+    GROBID = "grobid"
+    PYMUPDF = "pymupdf"
+
+
+class ParsingSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    parser: ParserBackend = ParserBackend.AUTO
+    grobid_base_url: str = "http://localhost:8070"
+    timeout_seconds: float = Field(default=60.0, gt=0)
+    min_text_characters: int = Field(default=10, ge=1)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix=ENV_PREFIX,
@@ -55,6 +71,7 @@ class Settings(BaseSettings):
     database_path: Path | None = None
     debug: bool = False
     metadata: MetadataSettings = Field(default_factory=MetadataSettings)
+    parsing: ParsingSettings = Field(default_factory=ParsingSettings)
 
     @property
     def resolved_data_dir(self) -> Path:
@@ -102,7 +119,7 @@ def _read_config(path: Path) -> dict[str, Any]:
     if "passagen" not in document:
         return document
 
-    unknown_sections = set(document) - {"passagen", "metadata"}
+    unknown_sections = set(document) - {"passagen", "metadata", "parsing"}
     if unknown_sections:
         names = ", ".join(sorted(str(name) for name in unknown_sections))
         raise ConfigError(f"Config {path} contains unknown sections: {names}")
@@ -113,6 +130,8 @@ def _read_config(path: Path) -> dict[str, Any]:
     values = dict(passagen_values)
     if "metadata" in document:
         values["metadata"] = document["metadata"]
+    if "parsing" in document:
+        values["parsing"] = document["parsing"]
     return values
 
 

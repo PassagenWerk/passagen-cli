@@ -36,6 +36,8 @@ metadata:
     enabled: false
   arxiv:
     enabled: false
+parsing:
+  parser: pymupdf
 """
     )
 
@@ -162,6 +164,36 @@ def test_metadata_command_resolves_local_pdf_metadata(tmp_path: Path) -> None:
     assert "already resolved" in result.stdout
 
 
+def test_parse_command_writes_extracted_artifact(tmp_path: Path) -> None:
+    source_dir = tmp_path / "inbox"
+    pdf_path = source_dir / "paper.pdf"
+    write_metadata_pdf(
+        pdf_path,
+        "Parsed Paper",
+        "1 Introduction\nThis paper contains enough text for full text parsing.",
+    )
+    config_path = tmp_path / "passagen.yaml"
+    write_offline_config(config_path)
+    data_dir = tmp_path / "data"
+    common = ["--config", str(config_path), "--data-dir", str(data_dir)]
+    assert runner.invoke(app, [*common, "scan", str(source_dir)]).exit_code == 0
+    paper = list_papers(data_dir / "passagen.db")[0]
+    assert runner.invoke(app, [*common, "metadata", paper.id]).exit_code == 0
+
+    result = runner.invoke(app, [*common, "parse", paper.id, "--parser", "pymupdf"])
+
+    assert result.exit_code == 0
+    assert "Parsed" in result.stdout
+    assert "with pymupdf" in result.stdout
+    current = list_papers(data_dir / "passagen.db")[0]
+    assert current.status.value == "parsed"
+    assert (data_dir / "papers" / paper.id / "extracted.json").is_file()
+
+    result = runner.invoke(app, [*common, "parse", paper.id])
+    assert result.exit_code == 0
+    assert "already parsed" in result.stdout
+
+
 def test_update_one_then_all_papers(tmp_path: Path) -> None:
     source_dir = tmp_path / "inbox"
     write_metadata_pdf(source_dir / "first.pdf", "First Paper")
@@ -179,7 +211,7 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "updated: 1, skipped: 0, failed: 0" in result.stdout
     current = {paper.original_filename: paper for paper in list_papers(data_dir / "passagen.db")}
-    assert current["first.pdf"].status.value == "metadata_resolved"
+    assert current["first.pdf"].status.value == "parsed"
     assert current["second.pdf"].status.value == "discovered"
 
     result = runner.invoke(
@@ -194,9 +226,7 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "updated: 1, skipped: 1, failed: 0" in result.stdout
-    assert all(
-        paper.status.value == "metadata_resolved" for paper in list_papers(data_dir / "passagen.db")
-    )
+    assert all(paper.status.value == "parsed" for paper in list_papers(data_dir / "passagen.db"))
 
     result = runner.invoke(app, [*common, "update", "--refresh"])
 
@@ -226,7 +256,7 @@ def test_update_all_isolates_paper_failure(tmp_path: Path) -> None:
     assert "updated: 1, skipped: 0, failed: 1" in result.stdout
     current = {paper.original_filename: paper for paper in list_papers(data_dir / "passagen.db")}
     assert current["missing.pdf"].status.value == "discovered"
-    assert current["valid.pdf"].status.value == "metadata_resolved"
+    assert current["valid.pdf"].status.value == "parsed"
 
 
 def test_update_rejects_unknown_paper(tmp_path: Path) -> None:

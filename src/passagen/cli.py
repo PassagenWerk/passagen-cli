@@ -10,14 +10,16 @@ from rich.status import Status
 from rich.table import Table
 
 from passagen import __version__
-from passagen.config import ConfigError, Settings, load_settings
+from passagen.config import ConfigError, ParserBackend, Settings, load_settings
 from passagen.db import current_version, initialize_database
 from passagen.execution_logging import configure_execution_logging, set_execution_log_level
 from passagen.metadata_service import MetadataResolutionError, resolve_paper_metadata
 from passagen.models import PaperStatus
+from passagen.parsing_service import PaperParsingError, parse_paper
 from passagen.repository import (
     DatabaseNotInitializedError,
     PaperRecord,
+    get_artifact,
     get_paper,
     list_papers,
 )
@@ -117,6 +119,7 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row("metadata.first_pages", str(settings.metadata.first_pages))
     table.add_row("metadata.crossref", str(settings.metadata.crossref.enabled).lower())
     table.add_row("metadata.arxiv", str(settings.metadata.arxiv.enabled).lower())
+    table.add_row("parsing.parser", settings.parsing.parser.value)
     console.print(table)
 
 
@@ -255,6 +258,7 @@ def update_command(
                 settings.resolved_database_path,
                 settings.resolved_data_dir,
                 settings.metadata,
+                settings.parsing,
                 paper_id,
                 refresh=refresh,
                 progress=progress.update,
@@ -289,6 +293,45 @@ def update_command(
         raise typer.Exit(code=1)
 
 
+@app.command("parse")
+def parse_command(
+    ctx: typer.Context,
+    paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
+    parser: Annotated[
+        ParserBackend | None,
+        typer.Option(help="Parser backend: auto, grobid, or pymupdf."),
+    ] = None,
+    refresh: Annotated[bool, typer.Option(help="Rebuild an existing extracted artifact.")] = False,
+) -> None:
+    settings = _state(ctx).settings
+    try:
+        with ConsoleProgress(console, f"Parsing full text for {paper_id}...") as progress:
+            result = parse_paper(
+                settings.resolved_database_path,
+                settings.resolved_data_dir,
+                paper_id,
+                settings.parsing,
+                parser=parser,
+                refresh=refresh,
+                progress=progress.update,
+            )
+    except (DatabaseNotInitializedError, PaperParsingError) as exc:
+        logger.error("parse command failed: paper_id=%s error=%s", paper_id, exc)
+        console.print(f"[red]Parse error:[/red] {exc}", highlight=False)
+        raise typer.Exit(code=1) from exc
+    for warning in result.warnings:
+        console.print(f"[yellow]Warning:[/yellow] {warning}", highlight=False)
+    if result.updated and result.artifact is not None and result.parsed is not None:
+        console.print(
+            f"Parsed {paper_id} with {result.parsed.parser}: "
+            f"{len(result.parsed.sections)} sections, "
+            f"{len(result.parsed.references)} references; artifact={result.artifact.path}",
+            markup=False,
+        )
+    else:
+        console.print(f"Paper {paper_id} is already parsed; use --refresh to rebuild.")
+
+
 @app.command("show")
 def show(ctx: typer.Context, paper_id: Annotated[str, typer.Argument(help="Paper ID.")]) -> None:
     settings = _state(ctx).settings
@@ -313,6 +356,8 @@ def _paper_details(settings: Settings, paper: PaperRecord) -> list[tuple[str, st
         if paper.managed_pdf_path is not None
         else None
     )
+    extracted = get_artifact(settings.resolved_database_path, paper.id, "extracted_json")
+    extracted_path = settings.resolved_data_dir / extracted.path if extracted is not None else None
     return [
         ("id", paper.id),
         ("status", paper.status.value),
@@ -337,6 +382,7 @@ def _paper_details(settings: Settings, paper: PaperRecord) -> list[tuple[str, st
             str(paper.file_size_bytes) if paper.file_size_bytes is not None else "-",
         ),
         ("managed_pdf_path", str(managed_path) if managed_path is not None else "-"),
+        ("extracted_path", str(extracted_path) if extracted_path is not None else "-"),
         ("imported_at", paper.imported_at),
     ]
 

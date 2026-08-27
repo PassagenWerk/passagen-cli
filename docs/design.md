@@ -311,6 +311,11 @@ metadata:
   grobid:
     enabled: false
     base_url: http://localhost:8070
+parsing:
+  parser: auto
+  grobid_base_url: http://localhost:8070
+  timeout_seconds: 60
+  min_text_characters: 10
 ```
 
 启用 `metadata.grobid.enabled` 前需单独启动 GROBID 服务，并确保 `base_url` 下的 `/api/processHeaderDocument` 可访问。Passagen 不负责启动或管理 GROBID 进程；默认关闭，因此现有本地与 Crossref/arXiv 流程不增加服务依赖。

@@ -46,6 +46,9 @@ metadata:
     base_url: http://grobid.test:8070
   crossref:
     enabled: false
+parsing:
+  parser: pymupdf
+  timeout_seconds: 30
 """
     )
     monkeypatch.setenv("PASSAGEN_METADATA__TIMEOUT_SECONDS", "3.5")
@@ -58,6 +61,8 @@ metadata:
     assert settings.metadata.arxiv.enabled is True
     assert settings.metadata.grobid.enabled is True
     assert settings.metadata.grobid.base_url == "http://grobid.test:8070"
+    assert settings.parsing.parser.value == "pymupdf"
+    assert settings.parsing.timeout_seconds == 30
 
 
 def test_cli_override_has_highest_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

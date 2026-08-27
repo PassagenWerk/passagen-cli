@@ -16,3 +16,9 @@ metadata:
   grobid:
     enabled: false
     base_url: http://localhost:8070
+
+parsing:
+  parser: auto
+  grobid_base_url: http://localhost:8070
+  timeout_seconds: 60
+  min_text_characters: 10

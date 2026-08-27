@@ -38,6 +38,17 @@ class PaperRecord:
     imported_at: str
 
 
+@dataclass(frozen=True, slots=True)
+class ArtifactRecord:
+    id: str
+    paper_id: str
+    kind: str
+    path: Path
+    version: str | None
+    sha256: str | None
+    size_bytes: int | None
+
+
 def register_pdf(
     database_path: Path,
     paper: Paper,
@@ -159,6 +170,70 @@ def update_paper_metadata(
     return _paper_record(row)
 
 
+def get_artifact(
+    database_path: Path,
+    paper_id: str,
+    kind: str,
+) -> ArtifactRecord | None:
+    _require_database(database_path)
+    with connect_database(database_path) as connection:
+        row = connection.execute(
+            "SELECT id, paper_id, kind, path, version, sha256, size_bytes "
+            "FROM artifacts WHERE paper_id = ? AND kind = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (paper_id, kind),
+        ).fetchone()
+    return _artifact_record(row) if row is not None else None
+
+
+def save_parsed_artifact(
+    database_path: Path,
+    paper_id: str,
+    path: Path,
+    *,
+    version: str,
+    sha256: str,
+    size_bytes: int,
+    status: PaperStatus,
+) -> tuple[PaperRecord, ArtifactRecord]:
+    _require_database(database_path)
+    with connect_database(database_path) as connection:
+        row = connection.execute(
+            "SELECT id FROM artifacts WHERE paper_id = ? AND kind = 'extracted_json' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (paper_id,),
+        ).fetchone()
+        artifact_id = str(row["id"]) if row is not None else str(uuid.uuid4())
+        if row is None:
+            connection.execute(
+                "INSERT INTO artifacts "
+                "(id, paper_id, kind, path, version, sha256, size_bytes) "
+                "VALUES (?, ?, 'extracted_json', ?, ?, ?, ?)",
+                (artifact_id, paper_id, path.as_posix(), version, sha256, size_bytes),
+            )
+        else:
+            connection.execute(
+                "UPDATE artifacts SET path = ?, version = ?, sha256 = ?, size_bytes = ?, "
+                "created_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (path.as_posix(), version, sha256, size_bytes, artifact_id),
+            )
+        cursor = connection.execute(
+            "UPDATE papers SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status.value, paper_id),
+        )
+        if cursor.rowcount != 1:
+            raise KeyError(paper_id)
+        paper_row = _select_paper(connection, "p.id = ?", (paper_id,))
+        artifact_row = connection.execute(
+            "SELECT id, paper_id, kind, path, version, sha256, size_bytes "
+            "FROM artifacts WHERE id = ?",
+            (artifact_id,),
+        ).fetchone()
+    if paper_row is None or artifact_row is None:
+        raise RuntimeError(f"Failed to reload parsed artifact for {paper_id}")
+    return _paper_record(paper_row), _artifact_record(artifact_row)
+
+
 def managed_path_is_referenced(database_path: Path, managed_path: Path) -> bool:
     if not database_path.exists():
         return False
@@ -224,6 +299,18 @@ def _paper_record(row: sqlite3.Row) -> PaperRecord:
         managed_pdf_path=Path(managed_path) if managed_path is not None else None,
         file_size_bytes=int(row["size_bytes"]) if row["size_bytes"] is not None else None,
         imported_at=str(row["imported_at"]),
+    )
+
+
+def _artifact_record(row: sqlite3.Row) -> ArtifactRecord:
+    return ArtifactRecord(
+        id=str(row["id"]),
+        paper_id=str(row["paper_id"]),
+        kind=str(row["kind"]),
+        path=Path(str(row["path"])),
+        version=str(row["version"]) if row["version"] is not None else None,
+        sha256=str(row["sha256"]) if row["sha256"] is not None else None,
+        size_bytes=int(row["size_bytes"]) if row["size_bytes"] is not None else None,
     )
 
 
