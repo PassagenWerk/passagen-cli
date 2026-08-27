@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from passagen.config import MetadataSettings
 from passagen.metadata_service import MetadataResolutionError, resolve_paper_metadata
 from passagen.models import PaperStatus
+from passagen.progress import ProgressCallback, report_progress
 from passagen.repository import PaperRecord, get_paper, list_papers
 
 LATEST_IMPLEMENTED_STATUS = PaperStatus.METADATA_RESOLVED
 _METADATA_PENDING_STATUSES = {PaperStatus.DISCOVERED, PaperStatus.FAILED}
+logger = logging.getLogger(__name__)
 
 
 class UpdateTargetError(ValueError):
@@ -37,13 +40,41 @@ def update_papers(
     paper_id: str | None = None,
     *,
     refresh: bool = False,
+    progress: ProgressCallback | None = None,
 ) -> UpdateResult:
     papers = _select_papers(database_path, paper_id)
+    logger.info(
+        "update started: target=%s refresh=%s selected=%s latest_status=%s",
+        paper_id or "all",
+        refresh,
+        len(papers),
+        LATEST_IMPLEMENTED_STATUS.value,
+    )
+    report_progress(progress, f"Selected {len(papers)} paper(s) for update.")
     result = UpdateResult()
-    for paper in papers:
+    for index, paper in enumerate(papers, start=1):
         if not refresh and paper.status not in _METADATA_PENDING_STATUSES:
+            logger.info(
+                "update skipped: paper_id=%s status=%s reason=already_at_or_beyond_target",
+                paper.id,
+                paper.status.value,
+            )
             result.skipped.append(paper)
+            report_progress(
+                progress,
+                f"Skipping paper {index}/{len(papers)}: {paper.title or paper.original_filename}",
+            )
             continue
+        logger.info(
+            "update paper started: paper_id=%s status=%s filename=%s",
+            paper.id,
+            paper.status.value,
+            paper.original_filename,
+        )
+        report_progress(
+            progress,
+            f"Updating paper {index}/{len(papers)}: {paper.title or paper.original_filename}",
+        )
         try:
             resolution = resolve_paper_metadata(
                 database_path,
@@ -51,15 +82,44 @@ def update_papers(
                 paper.id,
                 metadata_settings,
                 refresh=refresh,
+                progress=progress,
             )
         except MetadataResolutionError as exc:
+            logger.error("update paper failed: paper_id=%s error=%s", paper.id, exc)
             result.failures.append(UpdateFailure(paper.id, str(exc)))
+            report_progress(progress, f"Update failed for {paper.original_filename}; continuing.")
             continue
         if resolution.updated:
             result.updated.append(resolution.paper)
+            logger.info(
+                "update paper finished: paper_id=%s status=%s title=%s",
+                paper.id,
+                resolution.paper.status.value,
+                resolution.paper.title,
+            )
+            report_progress(
+                progress,
+                f"Updated paper {index}/{len(papers)}: "
+                f"{resolution.paper.title or resolution.paper.original_filename}",
+            )
         else:
             result.skipped.append(resolution.paper)
+            logger.info("update paper skipped by stage: paper_id=%s", paper.id)
         result.warnings.extend(UpdateFailure(paper.id, warning) for warning in resolution.warnings)
+        for warning in resolution.warnings:
+            logger.warning("update paper warning: paper_id=%s warning=%s", paper.id, warning)
+    logger.info(
+        "update finished: updated=%s skipped=%s warnings=%s failed=%s",
+        len(result.updated),
+        len(result.skipped),
+        len(result.warnings),
+        len(result.failures),
+    )
+    report_progress(
+        progress,
+        f"Update complete: {len(result.updated)} updated, "
+        f"{len(result.skipped)} skipped, {len(result.failures)} failed.",
+    )
     return result
 
 

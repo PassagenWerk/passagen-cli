@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -400,7 +402,7 @@ def test_resolve_metadata_uses_grobid_when_local_identity_is_incomplete(
     tmp_path: Path,
 ) -> None:
     source_path = tmp_path / "inbox" / "paper.pdf"
-    write_pdf(source_path, "Paper body", title="Local Title")
+    write_pdf(source_path, "Paper body", title="Published Paper", author="")
     data_dir = tmp_path / "data"
     database_path = data_dir / "passagen.db"
     paper = scan_directory(
@@ -453,6 +455,58 @@ def test_resolve_metadata_uses_grobid_when_local_identity_is_incomplete(
     assert len(grobid.paths) == 1
 
 
+def test_resolve_metadata_rejects_grobid_publisher_cover_identity(tmp_path: Path) -> None:
+    source_path = tmp_path / "inbox" / "paper.pdf"
+    write_pdf(
+        source_path,
+        "Paper body without an identifier",
+        title="Sirius: Composing Network Function Chains into P4-Capable Edge Gateways",
+        author="Jiaqi Gao; Jiamin Cao; Yifan Li; Mengqi Liu; Ming Tang; Dennis Cai; Ennan Zhai",
+    )
+    data_dir = tmp_path / "data"
+    database_path = data_dir / "passagen.db"
+    paper = scan_directory(
+        source_path.parent,
+        data_dir=data_dir,
+        database_path=database_path,
+    ).imported[0]
+    crossref = FakeLookup(error="must not be called")
+
+    result = resolve_paper_metadata(
+        database_path,
+        data_dir,
+        paper.id,
+        MetadataSettings(grobid=GrobidSettings(enabled=True)),
+        crossref=crossref,
+        arxiv=FakeLookup(error="must not be called"),
+        grobid=FakePdfLookup(
+            BibliographicMetadata(
+                title="Open access to the Proceedings of the 21st USENIX Symposium on Networked",
+                authors=("Systems Design", "Alibaba Cloud"),
+                doi="10.1000/publisher-cover",
+                sources={"title": "grobid", "authors": "grobid", "doi": "grobid"},
+            )
+        ),
+    )
+
+    assert result.paper.title == (
+        "Sirius: Composing Network Function Chains into P4-Capable Edge Gateways"
+    )
+    assert result.paper.authors == (
+        "Jiaqi Gao",
+        "Jiamin Cao",
+        "Yifan Li",
+        "Mengqi Liu",
+        "Ming Tang",
+        "Dennis Cai",
+        "Ennan Zhai",
+    )
+    assert result.paper.doi is None
+    assert result.paper.metadata_sources["title"] == "pdf"
+    assert not crossref.identifiers
+    assert result.warnings == ("GROBID title does not match PDF title; ignoring response",)
+
+
 def test_resolve_metadata_uses_grobid_to_recover_crossref_conflict(tmp_path: Path) -> None:
     source_path = tmp_path / "inbox" / "paper.pdf"
     write_pdf(
@@ -483,15 +537,28 @@ def test_resolve_metadata_uses_grobid_to_recover_crossref_conflict(tmp_path: Pat
         )
     )
 
-    result = resolve_paper_metadata(
-        database_path,
-        data_dir,
-        paper.id,
-        MetadataSettings(grobid=GrobidSettings(enabled=True)),
-        crossref=crossref,
-        arxiv=FakeLookup(error="must not be called"),
-        grobid=grobid,
-    )
+    log_output = io.StringIO()
+    log_handler = logging.StreamHandler(log_output)
+    service_logger = logging.getLogger("passagen.metadata_service")
+    previous_level = service_logger.level
+    service_logger.addHandler(log_handler)
+    service_logger.setLevel(logging.INFO)
+    progress_events: list[str] = []
+    try:
+        result = resolve_paper_metadata(
+            database_path,
+            data_dir,
+            paper.id,
+            MetadataSettings(grobid=GrobidSettings(enabled=True)),
+            crossref=crossref,
+            arxiv=FakeLookup(error="must not be called"),
+            grobid=grobid,
+            progress=progress_events.append,
+        )
+    finally:
+        service_logger.removeHandler(log_handler)
+        service_logger.setLevel(previous_level)
+        log_handler.close()
 
     assert result.paper.title == "Published Paper"
     assert result.paper.doi == "10.1145/3789240.3829171"
@@ -499,6 +566,17 @@ def test_resolve_metadata_uses_grobid_to_recover_crossref_conflict(tmp_path: Pat
     assert crossref.identifiers == ["10.1145/3789240", "10.1145/3789240.3829171"]
     assert len(grobid.paths) == 1
     assert not result.warnings
+    log_text = log_output.getvalue()
+    assert "metadata route selected: provider=Crossref identifier=10.1145/3789240" in log_text
+    assert "trying GROBID fallback" in log_text
+    assert "metadata route selected: provider=GROBID" in log_text
+    assert "metadata DOI corrected by GROBID" in log_text
+    assert "provider=Crossref identifier=10.1145/3789240.3829171" in log_text
+    assert "Querying Crossref by DOI: 10.1145/3789240" in progress_events
+    assert "Crossref title conflict; trying GROBID fallback." in progress_events
+    assert "Uploading PDF to GROBID..." in progress_events
+    assert "Querying Crossref by DOI: 10.1145/3789240.3829171" in progress_events
+    assert progress_events[-1] == "Metadata saved."
 
 
 def test_resolve_metadata_continues_when_grobid_fails(tmp_path: Path) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sqlite3
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from passagen.db import initialize_database
 from passagen.models import Paper
+from passagen.progress import ProgressCallback, report_progress
 from passagen.repository import (
     PaperRecord,
     find_paper_by_sha256,
@@ -18,6 +20,7 @@ from passagen.repository import (
 
 _COPY_CHUNK_SIZE = 1024 * 1024
 _PDF_HEADER_SIZE = 1024
+logger = logging.getLogger(__name__)
 
 
 class ScanDirectoryError(ValueError):
@@ -47,24 +50,77 @@ def scan_directory(
     data_dir: Path,
     database_path: Path,
     recursive: bool = True,
+    progress: ProgressCallback | None = None,
 ) -> ScanResult:
     source_dir = directory.expanduser().resolve()
     managed_root = data_dir.expanduser().resolve()
+    logger.info(
+        "scan started: source=%s recursive=%s managed_root=%s",
+        source_dir,
+        recursive,
+        managed_root,
+    )
+    report_progress(progress, f"Discovering PDFs in {source_dir}...")
     if not source_dir.exists():
+        logger.error("scan failed: source does not exist: %s", source_dir)
         raise ScanDirectoryError(f"Scan directory does not exist: {source_dir}")
     if not source_dir.is_dir():
+        logger.error("scan failed: source is not a directory: %s", source_dir)
         raise ScanDirectoryError(f"Scan path is not a directory: {source_dir}")
 
     initialize_database(database_path)
     candidates, discovery_failures = _discover_pdfs(source_dir, managed_root, recursive)
+    logger.info(
+        "scan discovery finished: candidates=%s discovery_failures=%s",
+        len(candidates),
+        len(discovery_failures),
+    )
+    report_progress(progress, f"Found {len(candidates)} PDF candidate(s).")
+    for failure in discovery_failures:
+        logger.error("scan discovery failed: file=%s error=%s", failure.path, failure.message)
     result = ScanResult(failures=discovery_failures)
-    for source_path in candidates:
+    for index, source_path in enumerate(candidates, start=1):
+        logger.info("scan candidate: file=%s", source_path)
+        report_progress(
+            progress,
+            f"Importing PDF {index}/{len(candidates)}: {source_path.name}",
+        )
         try:
             record, created = _import_pdf(source_path, managed_root, database_path)
         except (InvalidPdfError, OSError, RuntimeError, sqlite3.Error) as exc:
+            logger.error("scan import failed: file=%s error=%s", source_path, exc)
             result.failures.append(ScanFailure(source_path, str(exc)))
+            report_progress(progress, f"Failed to import {source_path.name}; continuing.")
             continue
         (result.imported if created else result.skipped).append(record)
+        if created:
+            logger.info(
+                "scan imported: file=%s paper_id=%s sha256=%s managed_path=%s",
+                source_path,
+                record.id,
+                record.pdf_sha256,
+                record.managed_pdf_path,
+            )
+            report_progress(progress, f"Imported {source_path.name}.")
+        else:
+            logger.info(
+                "scan skipped duplicate: file=%s existing_paper_id=%s sha256=%s",
+                source_path,
+                record.id,
+                record.pdf_sha256,
+            )
+            report_progress(progress, f"Skipped duplicate {source_path.name}.")
+    logger.info(
+        "scan finished: imported=%s skipped=%s failed=%s",
+        len(result.imported),
+        len(result.skipped),
+        len(result.failures),
+    )
+    report_progress(
+        progress,
+        f"Scan complete: {len(result.imported)} imported, "
+        f"{len(result.skipped)} skipped, {len(result.failures)} failed.",
+    )
     return result
 
 

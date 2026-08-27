@@ -18,6 +18,7 @@
 | `src/passagen/scanning.py` | PDF 发现、基础完整性校验、内容寻址导入和失败隔离 |
 | `src/passagen/metadata.py` | 轻量 PDF 标识提取、GROBID/Crossref/arXiv adapter 和字段合并 |
 | `src/passagen/metadata_service.py` | 元数据查询编排、降级策略和状态推进 |
+| `src/passagen/execution_logging.py` | 单次执行日志文件与 `logs/latest` 链接初始化 |
 | `src/passagen/updating.py` | 单篇/全量 Paper 的当前开发前沿推进与失败隔离 |
 
 这些模块在职责仍然紧凑时可以保持不拆分。后续里程碑引入解析、metadata、LLM 和 pipeline 后，再按本文定义的边界演进；不要为了匹配目标目录预先创建空包。

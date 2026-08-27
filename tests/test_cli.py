@@ -10,6 +10,14 @@ from passagen.repository import list_papers
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def isolate_cli_working_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+
 def write_metadata_pdf(path: Path, title: str, text: str = "Paper body") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with pymupdf.open() as document:
@@ -230,3 +238,49 @@ def test_update_rejects_unknown_paper(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Paper not found" in result.stdout
+
+
+def test_scan_and_metadata_write_detailed_execution_logs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    source_dir = tmp_path / "inbox"
+    write_metadata_pdf(
+        source_dir / "paper.pdf",
+        "Logged Paper",
+        "DOI: 10.1000/logged",
+    )
+    config_path = tmp_path / "passagen.yaml"
+    write_offline_config(config_path)
+    data_dir = tmp_path / "data"
+    common = ["--config", str(config_path), "--data-dir", str(data_dir)]
+
+    result = runner.invoke(app, [*common, "scan", str(source_dir)])
+
+    assert result.exit_code == 0
+    assert "Discovering PDFs" in result.stdout
+    assert "Importing PDF 1/1: paper.pdf" in result.stdout
+    assert "Scan complete: 1 imported, 0 skipped, 0 failed." in result.stdout
+    scan_log = (tmp_path / "logs" / "latest").read_text(encoding="utf-8")
+    assert "execution started: command=scan" in scan_log
+    assert f"scan candidate: file={source_dir / 'paper.pdf'}" in scan_log
+    assert "scan imported:" in scan_log
+    assert "scan finished: imported=1 skipped=0 failed=0" in scan_log
+    paper = list_papers(data_dir / "passagen.db")[0]
+
+    result = runner.invoke(app, [*common, "metadata", paper.id])
+
+    assert result.exit_code == 0
+    assert "Reading local PDF metadata: paper.pdf" in result.stdout
+    assert "Saving resolved metadata" in result.stdout
+    assert "Metadata saved." in result.stdout
+    metadata_log = (tmp_path / "logs" / "latest").read_text(encoding="utf-8")
+    assert "execution started: command=metadata" in metadata_log
+    assert f"metadata started: paper_id={paper.id}" in metadata_log
+    assert "metadata local extraction succeeded:" in metadata_log
+    assert "metadata route skipped: provider=Crossref reason=disabled" in metadata_log
+    assert "metadata route skipped: provider=arXiv reason=disabled" in metadata_log
+    assert "metadata fallback unavailable:" in metadata_log
+    assert "metadata finished:" in metadata_log
+    assert len(list((tmp_path / "logs").glob("*.txt"))) == 2

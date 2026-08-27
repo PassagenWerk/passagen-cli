@@ -6,6 +6,7 @@ __pycache__/
 .coverage
 htmlcov/
 reports/
+logs/
 *.py[cod]
 *.db
 *.sqlite3

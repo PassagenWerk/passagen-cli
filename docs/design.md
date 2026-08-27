@@ -58,6 +58,14 @@ passagen show <paper-id>        # 查看元数据和产物路径
 
 `scan` 和处理流程保持分离，便于在调用外部服务前检查新论文。M7 的 `passagen run <directory>` 将组合 scan 与 update，形成从目录开始的完整入口。
 
+## 执行日志
+
+每次 CLI 执行在当前工作目录的 `logs/` 下创建一个带本地日期时间和微秒的文本日志，例如 `logs/20260827-153012-123456.txt`。`logs/latest` 是指向本次日志的相对符号链接；不额外复制日志内容，符号链接不可用的平台退化为指向同一 inode 的硬链接。`logs/` 不受 Git 跟踪。
+
+日志至少覆盖：命令与运行配置路径、扫描目录和逐个 PDF 候选、导入或 SHA-256 重复结果、metadata 本地提取、DOI/Crossref 与 arXiv 路由、GROBID fallback 原因和结果、标识纠正与冲突拒绝、最终字段来源、update 的选择/跳过/成功/失败汇总。外部服务错误作为 warning 记录，业务失败作为 error 记录；日志不输出 API key 或完整配置文件内容。
+
+终端不镜像完整日志，只显示用户可感知的阶段进度。交互式 TTY 使用 Rich spinner 原地更新当前步骤；非 TTY、CI 和重定向输出使用普通逐行文本。scan 显示发现和逐文件导入进度，metadata 显示本地提取、DOI/Crossref、arXiv、GROBID fallback 与保存阶段，批量 update 显示当前 Paper 和总体计数。warning、error 和最终汇总继续作为持久终端输出。
+
 ## 论文标识和去重
 
 每篇论文同时保存以下可用标识：
@@ -101,6 +109,7 @@ passagen show <paper-id>        # 查看元数据和产物路径
 - 同时具有 DOI 和 arXiv ID 时可以查询两者，Crossref 用于已发表版本的 venue、year 和 DOI 元数据，arXiv 用于预印本标识和版本信息。
 - 可选 GROBID fallback 默认关闭；启用后，本地缺少 title、authors 或 DOI/arXiv ID 时调用 `processHeaderDocument`，并使用其 TEI header 结果补充身份信息。
 - Crossref 标题与当前 PDF/GROBID 标题冲突时，GROBID 可作为第二次校验；若 GROBID 给出不同 DOI，则使用新 DOI 重新执行 Crossref 精确查询。
+- 低置信度 fallback 只填补本地缺失字段，不覆盖已经存在的本地字段；当 GROBID 标题与本地标题明显不一致时拒绝整份 GROBID 结果。Crossref 冲突仲裁时，只有 GROBID 标题与 Crossref 标题一致，才允许使用 GROBID 修正论文身份。
 - 没有可靠标识且 GROBID 未启用或未提取到标识时，只使用已有本地结果，不根据模糊标题自动查询论文。
 
 本地书目信息采用分层提取：先使用可信的 PDF metadata/XMP；title 缺失或明显为生成器占位值时，从前几页的字体大小和坐标选择标题块，并用原文件名候选校验；author metadata 缺失时，从标题下方的姓名块提取并过滤机构、URL 和脚注标记。venue 与非 DOI/arXiv source URL 可以从出版方封面文字补充。全文结构和章节边界仍由 M4 parser 负责。

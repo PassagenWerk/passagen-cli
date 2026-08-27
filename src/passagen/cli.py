@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.status import Status
 from rich.table import Table
 
 from passagen import __version__
 from passagen.config import ConfigError, Settings, load_settings
 from passagen.db import current_version, initialize_database
+from passagen.execution_logging import configure_execution_logging, set_execution_log_level
 from passagen.metadata_service import MetadataResolutionError, resolve_paper_metadata
 from passagen.models import PaperStatus
 from passagen.repository import (
@@ -31,11 +34,38 @@ db_app = typer.Typer(help="Manage the Passagen database.")
 app.add_typer(config_app, name="config")
 app.add_typer(db_app, name="db")
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 class AppState:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, log_path: Path) -> None:
         self.settings = settings
+        self.log_path = log_path
+
+
+class ConsoleProgress:
+    def __init__(self, output: Console, initial_message: str) -> None:
+        self.output = output
+        self.initial_message = initial_message
+        self.status: Status | None = None
+
+    def __enter__(self) -> ConsoleProgress:
+        if self.output.is_terminal:
+            self.status = self.output.status(self.initial_message)
+            self.status.start()
+        else:
+            self.output.print(self.initial_message, markup=False)
+        return self
+
+    def update(self, message: str) -> None:
+        if self.status is not None:
+            self.status.update(message)
+        else:
+            self.output.print(message, markup=False)
+
+    def __exit__(self, *_args: object) -> None:
+        if self.status is not None:
+            self.status.stop()
 
 
 def version_callback(value: bool) -> None:
@@ -56,17 +86,30 @@ def main(
     ] = None,
 ) -> None:
     del version
+    log_path = configure_execution_logging(debug=bool(debug))
+    command = ctx.invoked_subcommand or "passagen"
+    logger.info("execution started: command=%s log=%s", command, log_path)
     try:
         settings = load_settings(config, {"data_dir": data_dir, "debug": debug})
     except ConfigError as exc:
+        logger.error("configuration failed: %s", exc)
         console.print(f"[red]Configuration error:[/red] {exc}", highlight=False)
         raise typer.Exit(code=2) from exc
-    ctx.obj = AppState(settings)
+    set_execution_log_level(debug=settings.debug)
+    logger.info(
+        "configuration loaded: data_dir=%s database=%s debug=%s",
+        settings.resolved_data_dir,
+        settings.resolved_database_path,
+        settings.debug,
+    )
+    ctx.call_on_close(lambda: logger.info("execution finished: command=%s", command))
+    ctx.obj = AppState(settings, log_path)
 
 
 @config_app.command("check")
 def config_check(ctx: typer.Context) -> None:
     settings = _state(ctx).settings
+    logger.info("config check started")
     table = Table(show_header=False)
     table.add_row("data_dir", str(settings.resolved_data_dir))
     table.add_row("database_path", str(settings.resolved_database_path))
@@ -81,6 +124,7 @@ def config_check(ctx: typer.Context) -> None:
 def db_init(ctx: typer.Context) -> None:
     database_path = _state(ctx).settings.resolved_database_path
     initialize_database(database_path)
+    logger.info("database initialized: path=%s", database_path)
     console.print("Database initialized.")
 
 
@@ -89,8 +133,10 @@ def db_status(ctx: typer.Context) -> None:
     database_path = _state(ctx).settings.resolved_database_path
     version = current_version(database_path)
     if version is None:
+        logger.error("database status failed: database is not initialized: path=%s", database_path)
         console.print("Database is not initialized.")
         raise typer.Exit(code=1)
+    logger.info("database status: path=%s schema_version=%s", database_path, version)
     console.print(f"Database schema version: {version}")
 
 
@@ -105,13 +151,16 @@ def scan(
 ) -> None:
     settings = _state(ctx).settings
     try:
-        result = scan_directory(
-            directory,
-            data_dir=settings.resolved_data_dir,
-            database_path=settings.resolved_database_path,
-            recursive=recursive,
-        )
+        with ConsoleProgress(console, "Starting PDF scan...") as progress:
+            result = scan_directory(
+                directory,
+                data_dir=settings.resolved_data_dir,
+                database_path=settings.resolved_database_path,
+                recursive=recursive,
+                progress=progress.update,
+            )
     except ScanDirectoryError as exc:
+        logger.error("scan command failed: %s", exc)
         console.print(f"[red]Scan error:[/red] {exc}", highlight=False)
         raise typer.Exit(code=2) from exc
 
@@ -138,6 +187,7 @@ def list_command(
     try:
         papers = list_papers(settings.resolved_database_path, status)
     except DatabaseNotInitializedError as exc:
+        logger.error("list command failed: %s", exc)
         console.print(f"[red]Database error:[/red] {exc}", highlight=False)
         raise typer.Exit(code=1) from exc
 
@@ -164,14 +214,17 @@ def metadata_command(
 ) -> None:
     settings = _state(ctx).settings
     try:
-        result = resolve_paper_metadata(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-            paper_id,
-            settings.metadata,
-            refresh=refresh,
-        )
+        with ConsoleProgress(console, f"Resolving metadata for {paper_id}...") as progress:
+            result = resolve_paper_metadata(
+                settings.resolved_database_path,
+                settings.resolved_data_dir,
+                paper_id,
+                settings.metadata,
+                refresh=refresh,
+                progress=progress.update,
+            )
     except (DatabaseNotInitializedError, MetadataResolutionError) as exc:
+        logger.error("metadata command failed: paper_id=%s error=%s", paper_id, exc)
         console.print(f"[red]Metadata error:[/red] {exc}", highlight=False)
         raise typer.Exit(code=1) from exc
 
@@ -197,14 +250,17 @@ def update_command(
 ) -> None:
     settings = _state(ctx).settings
     try:
-        result = update_papers(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-            settings.metadata,
-            paper_id,
-            refresh=refresh,
-        )
+        with ConsoleProgress(console, "Preparing update...") as progress:
+            result = update_papers(
+                settings.resolved_database_path,
+                settings.resolved_data_dir,
+                settings.metadata,
+                paper_id,
+                refresh=refresh,
+                progress=progress.update,
+            )
     except (DatabaseNotInitializedError, UpdateTargetError) as exc:
+        logger.error("update command failed: target=%s error=%s", paper_id or "all", exc)
         console.print(f"[red]Update error:[/red] {exc}", highlight=False)
         raise typer.Exit(code=1) from exc
 
@@ -239,9 +295,11 @@ def show(ctx: typer.Context, paper_id: Annotated[str, typer.Argument(help="Paper
     try:
         paper = get_paper(settings.resolved_database_path, paper_id)
     except DatabaseNotInitializedError as exc:
+        logger.error("show command failed: paper_id=%s error=%s", paper_id, exc)
         console.print(f"[red]Database error:[/red] {exc}", highlight=False)
         raise typer.Exit(code=1) from exc
     if paper is None:
+        logger.error("show command failed: paper not found: paper_id=%s", paper_id)
         console.print(f"[red]Paper not found:[/red] {paper_id}", highlight=False)
         raise typer.Exit(code=1)
 
