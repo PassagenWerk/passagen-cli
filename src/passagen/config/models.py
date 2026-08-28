@@ -44,6 +44,7 @@ class LlmSettings(BaseModel):
     model: str = "gpt-4o-mini"
     api_key_env: str = "PASSAGEN_API_KEY"
     timeout_seconds: float = Field(default=120.0, gt=0)
+    disable_thinking: bool = False
 
 
 class ProvidersSettings(BaseModel):

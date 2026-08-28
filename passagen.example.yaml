@@ -22,6 +22,7 @@ providers:
     model: gpt-4o-mini
     api_key_env: PASSAGEN_API_KEY
     timeout_seconds: 120
+    disable_thinking: false
 
 # 各处理阶段的参数配置，按阶段分包
 pipeline:
@@ -31,6 +32,6 @@ pipeline:
     parser: auto
     min_text_characters: 10
   summarization:
-    max_chunk_characters: 48000
+    max_chunk_characters: 96000
     fact_max_output_tokens: 1500
     summary_max_output_tokens: 3000

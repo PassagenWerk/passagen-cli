@@ -36,6 +36,7 @@ class OpenAICompatibleProvider:
         self.base_url = settings.base_url.rstrip("/")
         self.model = settings.model
         self.timeout_seconds = settings.timeout_seconds
+        self.disable_thinking = settings.disable_thinking
         self.api_key = os.environ.get(settings.api_key_env)
         self.client = client
         if not self.api_key:
@@ -51,7 +52,7 @@ class OpenAICompatibleProvider:
             "response_format": {"type": "json_object"},
             "max_tokens": max_tokens,
         }
-        if "deepseek.com" in self.base_url:
+        if self.disable_thinking or "deepseek.com" in self.base_url:
             payload["thinking"] = {"type": "disabled"}
         try:
             response = self._post(payload)
@@ -60,15 +61,22 @@ class OpenAICompatibleProvider:
             content = body["choices"][0]["message"]["content"]
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
             raise LlmProviderError(f"OpenAI-compatible LLM request failed: {exc}") from exc
-        if not isinstance(content, str) or not content.strip():
-            raise LlmProviderError("OpenAI-compatible LLM returned an empty response")
         usage = body.get("usage")
+        output_tokens = _token_count(usage, "completion_tokens")
+        reasoning_tokens = _reasoning_tokens(usage)
+        finish_reason = _string(body["choices"][0].get("finish_reason"))
+        if not isinstance(content, str) or not content.strip():
+            raise LlmProviderError(
+                "OpenAI-compatible LLM returned an empty response "
+                f"(finish_reason={finish_reason}, output_tokens={output_tokens}, "
+                f"reasoning_tokens={reasoning_tokens})"
+            )
         return LlmResponse(
             content=content,
             input_tokens=_token_count(usage, "prompt_tokens"),
-            output_tokens=_token_count(usage, "completion_tokens"),
-            reasoning_tokens=_reasoning_tokens(usage),
-            finish_reason=_string(body["choices"][0].get("finish_reason")),
+            output_tokens=output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            finish_reason=finish_reason,
         )
 
     def _post(self, payload: dict[str, Any]) -> httpx.Response:
