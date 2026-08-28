@@ -556,7 +556,7 @@ uv build
 
 ## 许可证
 
-Passagen 仅按照 [GNU Affero General Public License v3.0](LICENSES/AGPL-3.0-only.txt)
+Passagen 仅按照 [GNU Affero General Public License v3.0](LICENSE)
 发布，SPDX 标识为 `AGPL-3.0-only`。
 
 运行时依赖 PyMuPDF 由其权利人按照 AGPLv3 或 Artifex 商业许可证双重授权。如需在不
