@@ -3,28 +3,32 @@ passagen:
   database_path: null
   debug: false
 
-metadata:
-  first_pages: 2
-  timeout_seconds: 10
+# 外部 provider service 配置，按 provider 分包
+providers:
   crossref:
     enabled: true
     base_url: https://api.crossref.org
     mailto: null
+    timeout_seconds: 10
   arxiv:
     enabled: true
     base_url: https://export.arxiv.org
+    timeout_seconds: 10
   grobid:
     base_url: http://localhost:8070
+    timeout_seconds: 60
+  llm:
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+    api_key_env: PASSAGEN_API_KEY
+    timeout_seconds: 120
 
-parsing:
-  parser: auto
-  grobid_base_url: http://localhost:8070
-  timeout_seconds: 60
-  min_text_characters: 10
-
-llm:
-  base_url: https://api.openai.com/v1
-  model: gpt-4o-mini
-  api_key_env: PASSAGEN_API_KEY
-  timeout_seconds: 120
-  max_chunk_characters: 12000
+# 各处理阶段的参数配置，按阶段分包
+pipeline:
+  metadata:
+    first_pages: 2
+  parsing:
+    parser: auto
+    min_text_characters: 10
+  summarization:
+    max_chunk_characters: 48000

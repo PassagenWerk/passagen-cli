@@ -47,13 +47,14 @@ def write_offline_config(path: Path) -> None:
     path.write_text(
         """
 passagen: {}
-metadata:
+providers:
   crossref:
     enabled: false
   arxiv:
     enabled: false
-parsing:
-  parser: pymupdf
+pipeline:
+  parsing:
+    parser: pymupdf
 """
     )
 

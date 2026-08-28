@@ -5,7 +5,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from passagen.config import ParserBackend, ParsingSettings
+from passagen.config import GrobidSettings, ParserBackend, ParsingSettings
 from passagen.models import PaperStatus
 from passagen.parsing import (
     GrobidFulltextParser,
@@ -47,6 +47,7 @@ def parse_paper(
     data_dir: Path,
     paper_id: str,
     settings: ParsingSettings,
+    grobid_settings: GrobidSettings,
     *,
     parser: ParserBackend | None = None,
     force: bool = False,
@@ -78,8 +79,8 @@ def parse_paper(
 
     backend = parser or settings.parser
     grobid_parser = grobid or GrobidFulltextParser(
-        base_url=settings.grobid_base_url,
-        timeout_seconds=settings.timeout_seconds,
+        base_url=grobid_settings.base_url,
+        timeout_seconds=grobid_settings.timeout_seconds,
     )
     fallback_parser = pymupdf_parser or PyMuPdfParser(
         min_text_characters=settings.min_text_characters

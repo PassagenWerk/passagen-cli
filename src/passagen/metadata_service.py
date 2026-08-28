@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from passagen.config import MetadataSettings
+from passagen.config import MetadataSettings, ProvidersSettings
 from passagen.metadata import (
     ArxivClient,
     BibliographicMetadata,
@@ -46,6 +46,7 @@ def resolve_paper_metadata(
     data_dir: Path,
     paper_id: str,
     settings: MetadataSettings,
+    providers: ProvidersSettings,
     *,
     force: bool = False,
     crossref: MetadataLookup | None = None,
@@ -105,8 +106,8 @@ def resolve_paper_metadata(
 
     warnings: list[str] = []
     grobid_client = grobid or GrobidClient(
-        base_url=settings.grobid.base_url,
-        timeout_seconds=settings.timeout_seconds,
+        base_url=providers.grobid.base_url,
+        timeout_seconds=providers.grobid.timeout_seconds,
     )
     grobid_attempted = False
     grobid_metadata = BibliographicMetadata()
@@ -125,16 +126,16 @@ def resolve_paper_metadata(
         grobid_attempted = True
     candidate = merge_metadata(local, grobid_metadata)
     crossref_client = crossref or CrossrefClient(
-        base_url=settings.crossref.base_url,
-        timeout_seconds=settings.timeout_seconds,
-        mailto=settings.crossref.mailto,
+        base_url=providers.crossref.base_url,
+        timeout_seconds=providers.crossref.timeout_seconds,
+        mailto=providers.crossref.mailto,
     )
     queried_doi = candidate.doi
     crossref_metadata = _lookup(
         "Crossref",
         queried_doi,
         crossref_client,
-        enabled=settings.crossref.enabled,
+        enabled=providers.crossref.enabled,
         warnings=warnings,
         progress=progress,
     )
@@ -172,7 +173,7 @@ def resolve_paper_metadata(
                 "Crossref",
                 queried_doi,
                 crossref_client,
-                enabled=settings.crossref.enabled,
+                enabled=providers.crossref.enabled,
                 warnings=warnings,
                 progress=progress,
             )
@@ -195,10 +196,10 @@ def resolve_paper_metadata(
         candidate.arxiv_id,
         arxiv
         or ArxivClient(
-            base_url=settings.arxiv.base_url,
-            timeout_seconds=settings.timeout_seconds,
+            base_url=providers.arxiv.base_url,
+            timeout_seconds=providers.arxiv.timeout_seconds,
         ),
-        enabled=settings.arxiv.enabled,
+        enabled=providers.arxiv.enabled,
         warnings=warnings,
         progress=progress,
     )

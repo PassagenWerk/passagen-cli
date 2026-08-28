@@ -12,7 +12,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from passagen.config import LlmSettings
+from passagen.config import LlmSettings, SummarizationSettings
 from passagen.llm import LlmProvider, LlmProviderError, LlmResponse, OpenAICompatibleProvider
 from passagen.models import PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
@@ -149,6 +149,7 @@ def summarize_paper(
     data_dir: Path,
     paper_id: str,
     settings: LlmSettings,
+    summarization: SummarizationSettings,
     *,
     force: bool = False,
     provider: LlmProvider | None = None,
@@ -177,7 +178,15 @@ def summarize_paper(
     run_id = start_processing_run(database_path, paper_id, "summarize")
     raw_dir = data_dir / "papers" / paper_id / "summary" / "raw"
     try:
-        facts = _section_facts(parsed, raw_dir, settings, llm, database_path, run_id, progress)
+        facts = _section_facts(
+            parsed,
+            raw_dir,
+            summarization.max_chunk_characters,
+            llm,
+            database_path,
+            run_id,
+            progress,
+        )
         report_progress(progress, "Generating structured summary...")
         raw_response = _generate(
             llm,
@@ -222,13 +231,13 @@ def summarize_paper(
 def _section_facts(
     parsed: ParsedPaper,
     raw_dir: Path,
-    settings: LlmSettings,
+    max_chunk_characters: int,
     provider: LlmProvider,
     database_path: Path,
     run_id: str,
     progress: ProgressCallback | None,
 ) -> list[str]:
-    chunks = _chunks(parsed.sections, settings.max_chunk_characters)
+    chunks = _chunks(parsed.sections, max_chunk_characters)
     facts: list[str] = []
     for index, chunk in enumerate(chunks, start=1):
         digest = hashlib.sha256(f"{SUMMARY_PROMPT_VERSION}\0{chunk}".encode()).hexdigest()

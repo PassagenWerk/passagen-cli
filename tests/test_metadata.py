@@ -9,7 +9,7 @@ import httpx
 import pymupdf
 import pytest
 
-from passagen.config import GrobidSettings, MetadataSettings
+from passagen.config import MetadataSettings, ProvidersSettings
 from passagen.metadata import (
     ArxivClient,
     BibliographicMetadata,
@@ -438,7 +438,8 @@ def test_resolve_metadata_uses_grobid_when_local_identity_is_incomplete(
         database_path,
         data_dir,
         paper.id,
-        MetadataSettings(grobid=GrobidSettings()),
+        MetadataSettings(),
+        ProvidersSettings(),
         crossref=crossref,
         arxiv=FakeLookup(error="must not be called"),
         grobid=grobid,
@@ -476,7 +477,8 @@ def test_resolve_metadata_rejects_grobid_publisher_cover_identity(tmp_path: Path
         database_path,
         data_dir,
         paper.id,
-        MetadataSettings(grobid=GrobidSettings()),
+        MetadataSettings(),
+        ProvidersSettings(),
         crossref=crossref,
         arxiv=FakeLookup(error="must not be called"),
         grobid=FakePdfLookup(
@@ -549,7 +551,8 @@ def test_resolve_metadata_uses_grobid_to_recover_crossref_conflict(tmp_path: Pat
             database_path,
             data_dir,
             paper.id,
-            MetadataSettings(grobid=GrobidSettings()),
+            MetadataSettings(),
+            ProvidersSettings(),
             crossref=crossref,
             arxiv=FakeLookup(error="must not be called"),
             grobid=grobid,
@@ -594,7 +597,8 @@ def test_resolve_metadata_continues_when_grobid_fails(tmp_path: Path) -> None:
         database_path,
         data_dir,
         paper.id,
-        MetadataSettings(grobid=GrobidSettings()),
+        MetadataSettings(),
+        ProvidersSettings(),
         crossref=FakeLookup(error="must not be called"),
         arxiv=FakeLookup(error="must not be called"),
         grobid=FakePdfLookup(error="GROBID unavailable"),
@@ -647,6 +651,7 @@ def test_resolve_metadata_queries_both_providers_and_persists_sources(tmp_path: 
         data_dir,
         paper.id,
         MetadataSettings(),
+        ProvidersSettings(),
         crossref=crossref,
         arxiv=arxiv,
         grobid=FakePdfLookup(),
@@ -680,6 +685,7 @@ def test_resolve_metadata_rejects_crossref_title_mismatch(tmp_path: Path) -> Non
         data_dir,
         paper.id,
         MetadataSettings(),
+        ProvidersSettings(),
         crossref=FakeLookup(
             BibliographicMetadata(
                 title="Proceedings of the ACM SIGCOMM Conference",
@@ -716,6 +722,7 @@ def test_resolve_metadata_continues_when_api_fails(tmp_path: Path) -> None:
         data_dir,
         paper.id,
         MetadataSettings(),
+        ProvidersSettings(),
         crossref=FakeLookup(error="Crossref unavailable"),
         arxiv=FakeLookup(error="must not be called"),
         grobid=FakePdfLookup(),
@@ -746,6 +753,7 @@ def test_resolve_metadata_without_identifiers_does_not_call_api(tmp_path: Path) 
         data_dir,
         paper.id,
         MetadataSettings(),
+        ProvidersSettings(),
         crossref=crossref,
         arxiv=arxiv,
         grobid=FakePdfLookup(),
@@ -755,6 +763,7 @@ def test_resolve_metadata_without_identifiers_does_not_call_api(tmp_path: Path) 
         data_dir,
         paper.id,
         MetadataSettings(),
+        ProvidersSettings(),
         crossref=crossref,
         arxiv=arxiv,
     )

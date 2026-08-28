@@ -266,12 +266,12 @@ outline 使用论文式组织方式，包含：
 通过统一 provider 接口支持 DeepSeek、OpenAI 等服务。首版优先实现 OpenAI-compatible API，运行时配置 provider、base URL 和模型：
 
 ```yaml
-llm:
-  provider: openai_compatible
-  base_url: https://api.example.com/v1
-  model: model-name
-  api_key_env: PASSAGEN_API_KEY
-  temperature: 0
+providers:
+  llm:
+    base_url: https://api.example.com/v1
+    model: model-name
+    api_key_env: PASSAGEN_API_KEY
+    timeout_seconds: 120
 ```
 
 每次调用记录模型、prompt 版本、Schema 版本、token 用量、调用时间和错误信息。API key 只从指定环境变量读取。
@@ -292,43 +292,46 @@ Passagen 默认把配置和所有受管理数据限制在启动命令时的当�
 - 相对覆盖路径以执行命令时的当前工作目录为基准。
 - API key 继续只从指定环境变量读取，不写入 `passagen.yaml`。
 
-当前配置使用独立的运行时和 metadata 分区：
+配置分为两个模块：外部 provider service（`providers`，按 provider 分包，各自的超时时间一并归入对应 provider）和各处理阶段参数（`pipeline`，按阶段分包）：
 
 ```yaml
 passagen:
   data_dir: data
   database_path: null
   debug: false
-metadata:
-  first_pages: 2
-  timeout_seconds: 10
+providers:
   crossref:
     enabled: true
     base_url: https://api.crossref.org
     mailto: null
+    timeout_seconds: 10
   arxiv:
     enabled: true
     base_url: https://export.arxiv.org
+    timeout_seconds: 10
   grobid:
     base_url: http://localhost:8070
-parsing:
-  parser: auto
-  grobid_base_url: http://localhost:8070
-  timeout_seconds: 60
-  min_text_characters: 10
-llm:
-  base_url: https://api.openai.com/v1
-  model: gpt-4o-mini
-  api_key_env: PASSAGEN_API_KEY
-  timeout_seconds: 120
-  max_chunk_characters: 12000
+    timeout_seconds: 60
+  llm:
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+    api_key_env: PASSAGEN_API_KEY
+    timeout_seconds: 120
+pipeline:
+  metadata:
+    first_pages: 2
+  parsing:
+    parser: auto
+    min_text_characters: 10
+  summarization:
+    max_chunk_characters: 12000
 ```
 
 执行需要 GROBID 的 metadata fallback 或 `auto`/`grobid` 解析前，Passagen 会检查服务健康状态。执行摘要前会检查 LLM API key 配置；不执行对应阶段时不检查这些依赖。缺少必需依赖时该阶段以明确错误失败。
 
-配置文件使用 `yaml.safe_load` 解析。根节点和各配置分区必须是 mapping，不允许使用可执行 Python tag。当前接受 `passagen` 和 `metadata` 分区；后续实现 LLM、parser 和 pipeline 时再增加对应顶层分区，避免把所有字段堆入 `passagen`。
+配置文件使用 `yaml.safe_load` 解析。根节点和各配置分区必须是 mapping，不允许使用可执行 Python tag。当前接受 `passagen`、`providers` 和 `pipeline` 分区；`providers` 内部按 provider 分包，`pipeline` 内部按处理阶段分包，避免把所有字段堆入 `passagen`。
 
-当前配置优先级为：CLI 参数 > 环境变量 > YAML > 内置默认值。嵌套环境变量使用双下划线，例如 `PASSAGEN_METADATA__TIMEOUT_SECONDS=5`。
+当前配置优先级为：CLI 参数 > 环境变量 > YAML > 内置默认值。嵌套环境变量使用双下划线，例如 `PASSAGEN_PROVIDERS__CROSSREF__TIMEOUT_SECONDS=5`。
 
 ## 数据存储
 

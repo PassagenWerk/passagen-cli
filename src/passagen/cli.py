@@ -113,12 +113,13 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row("data_dir", str(settings.resolved_data_dir))
     table.add_row("database_path", str(settings.resolved_database_path))
     table.add_row("debug", str(settings.debug).lower())
-    table.add_row("metadata.first_pages", str(settings.metadata.first_pages))
-    table.add_row("metadata.crossref", str(settings.metadata.crossref.enabled).lower())
-    table.add_row("metadata.arxiv", str(settings.metadata.arxiv.enabled).lower())
-    table.add_row("parsing.parser", settings.parsing.parser.value)
-    table.add_row("llm.base_url", settings.llm.base_url)
-    table.add_row("llm.model", settings.llm.model)
+    table.add_row("providers.crossref", str(settings.providers.crossref.enabled).lower())
+    table.add_row("providers.arxiv", str(settings.providers.arxiv.enabled).lower())
+    table.add_row("providers.grobid.base_url", settings.providers.grobid.base_url)
+    table.add_row("providers.llm.base_url", settings.providers.llm.base_url)
+    table.add_row("providers.llm.model", settings.providers.llm.model)
+    table.add_row("pipeline.metadata.first_pages", str(settings.pipeline.metadata.first_pages))
+    table.add_row("pipeline.parsing.parser", settings.pipeline.parsing.parser.value)
     console.print(table)
 
 
@@ -221,7 +222,8 @@ def metadata_command(
                 settings.resolved_database_path,
                 settings.resolved_data_dir,
                 paper_id,
-                settings.metadata,
+                settings.pipeline.metadata,
+                settings.providers,
                 force=force,
                 progress=progress.update,
             )
@@ -256,10 +258,9 @@ def update_command(
             result = update_papers(
                 settings.resolved_database_path,
                 settings.resolved_data_dir,
-                settings.metadata,
-                settings.parsing,
+                settings.providers,
+                settings.pipeline,
                 paper_id,
-                llm_settings=settings.llm,
                 force=force,
                 progress=progress.update,
             )
@@ -310,7 +311,8 @@ def parse_command(
                 settings.resolved_database_path,
                 settings.resolved_data_dir,
                 paper_id,
-                settings.parsing,
+                settings.pipeline.parsing,
+                settings.providers.grobid,
                 parser=parser,
                 force=force,
                 progress=progress.update,
@@ -345,7 +347,8 @@ def summarize_command(
                 settings.resolved_database_path,
                 settings.resolved_data_dir,
                 paper_id,
-                settings.llm,
+                settings.providers.llm,
+                settings.pipeline.summarization,
                 force=force,
                 progress=progress.update,
             )

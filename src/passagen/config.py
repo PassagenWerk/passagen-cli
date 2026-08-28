@@ -19,6 +19,7 @@ class CrossrefSettings(BaseModel):
     enabled: bool = True
     base_url: str = "https://api.crossref.org"
     mailto: str | None = None
+    timeout_seconds: float = Field(default=10.0, gt=0)
 
 
 class ArxivSettings(BaseModel):
@@ -26,37 +27,14 @@ class ArxivSettings(BaseModel):
 
     enabled: bool = True
     base_url: str = "https://export.arxiv.org"
+    timeout_seconds: float = Field(default=10.0, gt=0)
 
 
 class GrobidSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     base_url: str = "http://localhost:8070"
-
-
-class MetadataSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    first_pages: int = Field(default=2, ge=1, le=10)
-    timeout_seconds: float = Field(default=10.0, gt=0)
-    crossref: CrossrefSettings = Field(default_factory=CrossrefSettings)
-    arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
-    grobid: GrobidSettings = Field(default_factory=GrobidSettings)
-
-
-class ParserBackend(StrEnum):
-    AUTO = "auto"
-    GROBID = "grobid"
-    PYMUPDF = "pymupdf"
-
-
-class ParsingSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    parser: ParserBackend = ParserBackend.AUTO
-    grobid_base_url: str = "http://localhost:8070"
     timeout_seconds: float = Field(default=60.0, gt=0)
-    min_text_characters: int = Field(default=10, ge=1)
 
 
 class LlmSettings(BaseModel):
@@ -66,7 +44,52 @@ class LlmSettings(BaseModel):
     model: str = "gpt-4o-mini"
     api_key_env: str = "PASSAGEN_API_KEY"
     timeout_seconds: float = Field(default=120.0, gt=0)
+
+
+class ProvidersSettings(BaseModel):
+    """External provider services, grouped by provider."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    crossref: CrossrefSettings = Field(default_factory=CrossrefSettings)
+    arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
+    grobid: GrobidSettings = Field(default_factory=GrobidSettings)
+    llm: LlmSettings = Field(default_factory=LlmSettings)
+
+
+class ParserBackend(StrEnum):
+    AUTO = "auto"
+    GROBID = "grobid"
+    PYMUPDF = "pymupdf"
+
+
+class MetadataSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    first_pages: int = Field(default=2, ge=1, le=10)
+
+
+class ParsingSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    parser: ParserBackend = ParserBackend.AUTO
+    min_text_characters: int = Field(default=10, ge=1)
+
+
+class SummarizationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     max_chunk_characters: int = Field(default=12_000, ge=1_000)
+
+
+class PipelineSettings(BaseModel):
+    """Processing stage parameters, grouped by stage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metadata: MetadataSettings = Field(default_factory=MetadataSettings)
+    parsing: ParsingSettings = Field(default_factory=ParsingSettings)
+    summarization: SummarizationSettings = Field(default_factory=SummarizationSettings)
 
 
 class Settings(BaseSettings):
@@ -79,9 +102,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     database_path: Path | None = None
     debug: bool = False
-    metadata: MetadataSettings = Field(default_factory=MetadataSettings)
-    parsing: ParsingSettings = Field(default_factory=ParsingSettings)
-    llm: LlmSettings = Field(default_factory=LlmSettings)
+    providers: ProvidersSettings = Field(default_factory=ProvidersSettings)
+    pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
 
     @property
     def resolved_data_dir(self) -> Path:
@@ -129,7 +151,7 @@ def _read_config(path: Path) -> dict[str, Any]:
     if "passagen" not in document:
         return document
 
-    unknown_sections = set(document) - {"passagen", "metadata", "parsing", "llm"}
+    unknown_sections = set(document) - {"passagen", "providers", "pipeline"}
     if unknown_sections:
         names = ", ".join(sorted(str(name) for name in unknown_sections))
         raise ConfigError(f"Config {path} contains unknown sections: {names}")
@@ -138,12 +160,10 @@ def _read_config(path: Path) -> dict[str, Any]:
     if not isinstance(passagen_values, dict):
         raise ConfigError(f"Config {path} section 'passagen' must contain a mapping")
     values = dict(passagen_values)
-    if "metadata" in document:
-        values["metadata"] = document["metadata"]
-    if "parsing" in document:
-        values["parsing"] = document["parsing"]
-    if "llm" in document:
-        values["llm"] = document["llm"]
+    if "providers" in document:
+        values["providers"] = document["providers"]
+    if "pipeline" in document:
+        values["pipeline"] = document["pipeline"]
     return values
 
 

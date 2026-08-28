@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
-from passagen.config import LlmSettings, MetadataSettings, ParsingSettings
+from passagen.config import PipelineSettings, ProvidersSettings
 from passagen.llm import LlmProvider
 from passagen.metadata_service import MetadataResolutionError, resolve_paper_metadata
 from passagen.models import PaperStatus
@@ -45,11 +45,10 @@ class UpdateResult:
 def update_papers(
     database_path: Path,
     data_dir: Path,
-    metadata_settings: MetadataSettings,
-    parsing_settings: ParsingSettings,
+    providers: ProvidersSettings,
+    pipeline: PipelineSettings,
     paper_id: str | None = None,
     *,
-    llm_settings: LlmSettings,
     summary_provider: LlmProvider | None = None,
     force: bool = False,
     progress: ProgressCallback | None = None,
@@ -127,7 +126,8 @@ def update_papers(
                     database_path,
                     data_dir,
                     paper.id,
-                    metadata_settings,
+                    pipeline.metadata,
+                    providers,
                     force=force,
                     progress=partial(
                         _report_paper_progress,
@@ -160,7 +160,8 @@ def update_papers(
                     database_path,
                     data_dir,
                     paper.id,
-                    parsing_settings,
+                    pipeline.parsing,
+                    providers.grobid,
                     force=force,
                     progress=partial(
                         _report_paper_progress,
@@ -193,7 +194,8 @@ def update_papers(
                     database_path,
                     data_dir,
                     paper.id,
-                    llm_settings,
+                    providers.llm,
+                    pipeline.summarization,
                     force=force,
                     provider=summary_provider,
                     progress=partial(

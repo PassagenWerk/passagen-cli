@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from passagen.config import LlmSettings, MetadataSettings, ParsingSettings
+from passagen.config import LlmSettings, PipelineSettings, ProvidersSettings, SummarizationSettings
 from passagen.db import connect_database, initialize_database
 from passagen.llm import LlmResponse
 from passagen.models import Paper, PaperStatus
@@ -64,7 +64,9 @@ def test_summarize_saves_validated_json_yaml_and_call_audit(tmp_path: Path) -> N
     database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
     provider = FakeProvider(['{"facts": ["A test paper"]}', valid_summary()])
 
-    result = summarize_paper(database_path, data_dir, paper_id, LlmSettings(), provider=provider)
+    result = summarize_paper(
+        database_path, data_dir, paper_id, LlmSettings(), SummarizationSettings(), provider=provider
+    )
 
     assert result.updated is True
     assert result.paper.status is PaperStatus.SUMMARIZED
@@ -81,7 +83,9 @@ def test_summarize_locally_removes_json_code_fence(tmp_path: Path) -> None:
     database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
     provider = FakeProvider(['{"facts": []}', f"```json\n{valid_summary()}\n```"])
 
-    result = summarize_paper(database_path, data_dir, paper_id, LlmSettings(), provider=provider)
+    result = summarize_paper(
+        database_path, data_dir, paper_id, LlmSettings(), SummarizationSettings(), provider=provider
+    )
 
     assert result.updated is True
     assert len(provider.prompts) == 2
@@ -91,7 +95,9 @@ def test_summarize_uses_llm_repair_for_schema_error(tmp_path: Path) -> None:
     database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
     provider = FakeProvider(['{"facts": []}', '{"identity": {"title": 1}}', valid_summary()])
 
-    result = summarize_paper(database_path, data_dir, paper_id, LlmSettings(), provider=provider)
+    result = summarize_paper(
+        database_path, data_dir, paper_id, LlmSettings(), SummarizationSettings(), provider=provider
+    )
 
     assert result.updated is True
     assert len(provider.prompts) == 3
@@ -103,7 +109,14 @@ def test_summarize_keeps_raw_response_when_repair_fails(tmp_path: Path) -> None:
     provider = FakeProvider(['{"facts": []}', "not json", "still not json", "also not json"])
 
     with pytest.raises(SummaryError, match="schema validation"):
-        summarize_paper(database_path, data_dir, paper_id, LlmSettings(), provider=provider)
+        summarize_paper(
+            database_path,
+            data_dir,
+            paper_id,
+            LlmSettings(),
+            SummarizationSettings(),
+            provider=provider,
+        )
 
     raw_dir = data_dir / "papers" / paper_id / "summary" / "raw"
     assert (raw_dir / "summary.json").read_text(encoding="utf-8") == "not json"
@@ -120,6 +133,7 @@ def test_summarize_reuses_successful_section_facts_when_forced(tmp_path: Path) -
         data_dir,
         paper_id,
         LlmSettings(),
+        SummarizationSettings(),
         provider=FakeProvider(['{"facts": ["A test paper"]}', valid_summary()]),
     )
     provider = FakeProvider([valid_summary("Rebuilt")])
@@ -129,6 +143,7 @@ def test_summarize_reuses_successful_section_facts_when_forced(tmp_path: Path) -
         data_dir,
         paper_id,
         LlmSettings(),
+        SummarizationSettings(),
         force=True,
         provider=provider,
     )
@@ -145,9 +160,8 @@ def test_update_advances_parsed_paper_to_summary_when_llm_is_enabled(tmp_path: P
     result = update_papers(
         database_path,
         data_dir,
-        MetadataSettings(),
-        ParsingSettings(),
-        llm_settings=LlmSettings(),
+        ProvidersSettings(),
+        PipelineSettings(),
         summary_provider=provider,
     )
 

@@ -4,7 +4,7 @@ import httpx
 import pymupdf
 import pytest
 
-from passagen.config import ParserBackend, ParsingSettings
+from passagen.config import GrobidSettings, ParserBackend, ParsingSettings
 from passagen.metadata import BibliographicMetadata
 from passagen.models import PaperStatus
 from passagen.parsing import GrobidFulltextParser, ParsingError, PyMuPdfParser
@@ -130,6 +130,7 @@ def test_parse_service_auto_falls_back_and_saves_artifact(tmp_path: Path) -> Non
             data_dir,
             paper.id,
             ParsingSettings(parser=ParserBackend.AUTO),
+            GrobidSettings(),
             grobid=GrobidFulltextParser(
                 base_url="https://grobid.test",
                 timeout_seconds=1,
