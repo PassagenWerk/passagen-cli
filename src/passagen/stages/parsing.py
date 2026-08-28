@@ -14,7 +14,7 @@ from passagen.parsing import (
     ParsingError,
     PyMuPdfParser,
 )
-from passagen.progress import ProgressCallback, report_progress
+from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
 from passagen.repository import (
     ArtifactRecord,
     PaperRecord,
@@ -22,6 +22,7 @@ from passagen.repository import (
     get_paper,
     save_parsed_artifact,
 )
+from passagen.stages.progress import ProgressCallback, report_progress
 
 logger = logging.getLogger(__name__)
 EXTRACTED_ARTIFACT_KIND = "extracted_json"
@@ -49,6 +50,7 @@ def parse_paper(
     settings: ParsingSettings,
     grobid_settings: GrobidSettings,
     *,
+    provider_health: ProviderHealthSnapshot | None = None,
     parser: ParserBackend | None = None,
     force: bool = False,
     grobid: GrobidFulltextParser | None = None,
@@ -86,6 +88,11 @@ def parse_paper(
         min_text_characters=settings.min_text_characters
     )
     warnings: list[str] = []
+    if backend is not ParserBackend.PYMUPDF and provider_health is not None:
+        try:
+            provider_health.require("grobid")
+        except ProviderUnavailableError as exc:
+            raise PaperParsingError("grobid_unavailable", str(exc)) from exc
     report_progress(progress, f"Parsing full text with {backend.value}...")
     try:
         parsed = _run_parser(
@@ -150,8 +157,6 @@ def _run_parser(
 ) -> ParsedPaper:
     if backend is ParserBackend.PYMUPDF:
         return pymupdf_parser.parse(path)
-    if not grobid.is_available():
-        raise ParsingError("grobid_unavailable", "GROBID health check failed")
     report_progress(progress, "GROBID is available; parsing TEI full text...")
     return grobid.parse(path)
 

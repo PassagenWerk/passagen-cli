@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from passagen.execution_logging import archive_execution_logs, configure_execution_logging
+from passagen.cli.logging import archive_execution_logs, configure_execution_logging
 
 
 def _reset_passagen_logger() -> None:

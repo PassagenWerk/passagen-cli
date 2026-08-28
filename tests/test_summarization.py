@@ -12,8 +12,8 @@ from passagen.llm import LlmResponse
 from passagen.models import Paper, PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
 from passagen.repository import register_pdf, save_parsed_artifact
-from passagen.summarization import SummaryError, summarize_paper
-from passagen.updating import update_papers
+from passagen.stages.summarization import SummaryError, summarize_paper
+from passagen.stages.updating import update_papers
 
 
 class FakeProvider:

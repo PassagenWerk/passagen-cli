@@ -51,6 +51,7 @@ class ProvidersSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    healthcheck_timeout_seconds: float = Field(default=3.0, gt=0)
     crossref: CrossrefSettings = Field(default_factory=CrossrefSettings)
     arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
     grobid: GrobidSettings = Field(default_factory=GrobidSettings)

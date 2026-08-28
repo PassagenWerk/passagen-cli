@@ -1,3 +1,4 @@
+import importlib
 from pathlib import Path
 
 import pymupdf
@@ -6,6 +7,7 @@ from typer.testing import CliRunner
 
 from passagen.cli import app
 from passagen.llm import LlmResponse
+from passagen.providers import ProviderHealthSnapshot, ProviderStatus
 from passagen.repository import list_papers
 
 runner = CliRunner()
@@ -18,10 +20,20 @@ def isolate_cli_working_directory(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        "passagen.summarization.OpenAICompatibleProvider",
+        "passagen.stages.summarization.OpenAICompatibleProvider",
         lambda _settings: _FakeLlmProvider(),
     )
     monkeypatch.setattr("passagen.metadata.GrobidClient.is_available", lambda _client: True)
+    monkeypatch.setattr(
+        importlib.import_module("passagen.cli.app"),
+        "check_provider_health",
+        lambda _settings: ProviderHealthSnapshot(
+            {
+                name: ProviderStatus(name, True, "test")
+                for name in ("crossref", "arxiv", "grobid", "llm")
+            }
+        ),
+    )
 
 
 class _FakeLlmProvider:

@@ -8,9 +8,10 @@ from passagen.config import GrobidSettings, ParserBackend, ParsingSettings
 from passagen.metadata import BibliographicMetadata
 from passagen.models import PaperStatus
 from passagen.parsing import GrobidFulltextParser, ParsingError, PyMuPdfParser
-from passagen.parsing_service import PaperParsingError, parse_paper
+from passagen.providers import ProviderHealthSnapshot, ProviderStatus
 from passagen.repository import update_paper_metadata
-from passagen.scanning import scan_directory
+from passagen.stages.parsing import PaperParsingError, parse_paper
+from passagen.stages.scanning import scan_directory
 
 
 def write_structured_pdf(path: Path) -> None:
@@ -118,22 +119,16 @@ def test_parse_service_auto_falls_back_and_saves_artifact(tmp_path: Path) -> Non
         PaperStatus.METADATA_RESOLVED,
     )
 
-    def unavailable(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(503)
-
-    with (
-        httpx.Client(transport=httpx.MockTransport(unavailable)) as client,
-        pytest.raises(PaperParsingError, match="GROBID health check failed"),
-    ):
+    with pytest.raises(PaperParsingError, match="health check failed") as error:
         parse_paper(
             database_path,
             data_dir,
             paper.id,
             ParsingSettings(parser=ParserBackend.AUTO),
             GrobidSettings(),
-            grobid=GrobidFulltextParser(
-                base_url="https://grobid.test",
-                timeout_seconds=1,
-                client=client,
+            provider_health=ProviderHealthSnapshot(
+                {"grobid": ProviderStatus("grobid", False, "health check failed")}
             ),
         )
+
+    assert error.value.code == "grobid_unavailable"

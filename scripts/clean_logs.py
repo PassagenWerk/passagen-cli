@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from passagen.execution_logging import archive_execution_logs
+from passagen.cli.logging import archive_execution_logs
 
 
 def main() -> None:

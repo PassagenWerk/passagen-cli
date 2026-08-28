@@ -6,26 +6,22 @@
 
 ## 当前状态
 
-当前 M0-M3 实现采用职责明确的顶层模块：
+当前实现采用小型核心模块与按职责划分的应用子包：
 
 | 路径 | 当前职责 |
 |------|----------|
-| `src/passagen/cli.py` | Typer 入口、配置错误呈现和数据库命令 |
-| `src/passagen/config.py` | 配置读取、优先级合并和运行时校验 |
+| `src/passagen/cli/` | Typer composition root、配置错误呈现、命令和 execution logging |
+| `src/passagen/config/` | 配置模型、优先级合并和运行时校验 |
 | `src/passagen/models.py` | Paper 状态与基础领域模型 |
 | `src/passagen/db.py` | SQLite 连接、事务和 Schema migration |
 | `src/passagen/repository.py` | Paper/PDF artifact 持久化、查询和 row mapping |
-| `src/passagen/scanning.py` | PDF 发现、基础完整性校验、内容寻址导入和失败隔离 |
 | `src/passagen/metadata.py` | 轻量 PDF 标识提取、GROBID/Crossref/arXiv adapter 和字段合并 |
-| `src/passagen/metadata_service.py` | 元数据查询编排、降级策略和状态推进 |
-| `src/passagen/execution_logging.py` | 单次执行日志目录初始化与历史日志归档 |
 | `src/passagen/parsing.py` | ParsedPaper contract、GROBID fulltext 与 PyMuPDF parser |
-| `src/passagen/parsing_service.py` | parser 选择、自动降级、extracted artifact 和状态推进 |
-| `src/passagen/updating.py` | 单篇/全量 Paper 的当前开发前沿推进与失败隔离 |
 | `src/passagen/llm.py` | OpenAI-compatible LLM adapter 与统一响应 contract |
-| `src/passagen/summarization.py` | 章节分块、摘要 Schema、校验/修复与摘要 artifact 持久化 |
+| `src/passagen/providers/` | 外部服务启动健康快照及可用性 contract |
+| `src/passagen/stages/` | scan、metadata、parse、summarize 和 update 的应用编排 |
 
-这些模块在职责仍然紧凑时可以保持不拆分。后续里程碑引入解析、metadata、LLM 和 pipeline 后，再按本文定义的边界演进；不要为了匹配目标目录预先创建空包。
+底层 parser、metadata adapter、repository 和领域模型在职责仍然紧凑时保持为模块；应用编排集中在 `stages/`，CLI 只负责组合依赖与呈现结果。不要为了匹配远期目标目录预先创建空包。
 
 默认运行边界是命令启动时的当前工作目录：配置从 `./passagen.yaml` 读取，受管理状态写入 `./data/`。用户 Home 目录不属于隐式配置或持久化来源；只有调用方显式传入的绝对路径可以把数据放到当前目录之外。
 
@@ -180,6 +176,9 @@ LLMProvider.generate(request) -> LLMResponse
 - timeout、认证、重试和供应商错误转换属于 adapter。
 - fallback 选择和是否继续处理属于应用或 pipeline 策略。
 - 所有 client 支持注入，以便测试使用固定 fake，而不是访问真实服务。
+- CLI 在配置加载后并行探测外部服务一次，并将不可变的 `ProviderHealthSnapshot` 注入 stages；探测失败本身不终止命令。
+- stage 只有在实际需要某个服务时才调用 snapshot 的 `require()`。不得在每篇 Paper 或每次外部请求前重复健康探测。
+- 不依赖外部服务的命令和分支不受其不可用状态影响，例如数据库命令、查询命令和 PyMuPDF 解析。
 
 ## CLI 边界
 

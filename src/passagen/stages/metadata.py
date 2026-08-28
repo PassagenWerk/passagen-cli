@@ -19,13 +19,14 @@ from passagen.metadata import (
     merge_metadata,
 )
 from passagen.models import PaperStatus
-from passagen.progress import ProgressCallback, report_progress
+from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
 from passagen.repository import (
     MetadataConflictError,
     PaperRecord,
     get_paper,
     update_paper_metadata,
 )
+from passagen.stages.progress import ProgressCallback, report_progress
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ def resolve_paper_metadata(
     settings: MetadataSettings,
     providers: ProvidersSettings,
     *,
+    provider_health: ProviderHealthSnapshot | None = None,
     force: bool = False,
     crossref: MetadataLookup | None = None,
     arxiv: MetadataLookup | None = None,
@@ -112,8 +114,7 @@ def resolve_paper_metadata(
     grobid_attempted = False
     grobid_metadata = BibliographicMetadata()
     if _needs_grobid(local):
-        if isinstance(grobid_client, GrobidClient) and not grobid_client.is_available():
-            raise MetadataResolutionError("GROBID health check failed")
+        _require_provider(provider_health, "grobid")
         fallback_reason = _grobid_reason(local)
         logger.info(
             "metadata fallback selected: paper_id=%s provider=GROBID reason=%s",
@@ -131,6 +132,8 @@ def resolve_paper_metadata(
         mailto=providers.crossref.mailto,
     )
     queried_doi = candidate.doi
+    if queried_doi is not None and providers.crossref.enabled:
+        _require_provider(provider_health, "crossref")
     crossref_metadata = _lookup(
         "Crossref",
         queried_doi,
@@ -141,6 +144,7 @@ def resolve_paper_metadata(
     )
 
     if not _titles_match(candidate.title, crossref_metadata.title) and not grobid_attempted:
+        _require_provider(provider_health, "grobid")
         logger.warning(
             "metadata Crossref title conflict: paper_id=%s doi=%s; trying GROBID fallback",
             paper.id,
@@ -191,6 +195,8 @@ def resolve_paper_metadata(
             f"Crossref title does not match PDF title for {queried_doi}; ignoring response"
         )
         crossref_metadata = BibliographicMetadata()
+    if candidate.arxiv_id is not None and providers.arxiv.enabled:
+        _require_provider(provider_health, "arxiv")
     arxiv_metadata = _lookup(
         "arXiv",
         candidate.arxiv_id,
@@ -233,6 +239,15 @@ def resolve_paper_metadata(
     )
     report_progress(progress, "Metadata saved.")
     return MetadataResolutionResult(paper=updated, warnings=tuple(warnings))
+
+
+def _require_provider(health: ProviderHealthSnapshot | None, name: str) -> None:
+    if health is None:
+        return
+    try:
+        health.require(name)
+    except ProviderUnavailableError as exc:
+        raise MetadataResolutionError(str(exc)) from exc
 
 
 def _lookup(

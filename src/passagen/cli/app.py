@@ -10,16 +10,15 @@ from rich.status import Status
 from rich.table import Table
 
 from passagen import __version__
-from passagen.config import ConfigError, ParserBackend, Settings, load_settings
-from passagen.db import current_version, initialize_database
-from passagen.execution_logging import (
+from passagen.cli.logging import (
     archive_execution_logs,
     configure_execution_logging,
     set_execution_log_level,
 )
-from passagen.metadata_service import MetadataResolutionError, resolve_paper_metadata
+from passagen.config import ConfigError, ParserBackend, Settings, load_settings
+from passagen.db import current_version, initialize_database
 from passagen.models import PaperStatus
-from passagen.parsing_service import PaperParsingError, parse_paper
+from passagen.providers import ProviderHealthSnapshot, check_provider_health
 from passagen.repository import (
     DatabaseNotInitializedError,
     PaperRecord,
@@ -27,9 +26,11 @@ from passagen.repository import (
     get_paper,
     list_papers,
 )
-from passagen.scanning import ScanDirectoryError, scan_directory
-from passagen.summarization import SummaryError, summarize_paper
-from passagen.updating import UpdateTargetError, update_papers
+from passagen.stages.metadata import MetadataResolutionError, resolve_paper_metadata
+from passagen.stages.parsing import PaperParsingError, parse_paper
+from passagen.stages.scanning import ScanDirectoryError, scan_directory
+from passagen.stages.summarization import SummaryError, summarize_paper
+from passagen.stages.updating import UpdateTargetError, update_papers
 
 app = typer.Typer(help="Manage paper PDFs and generate structured summaries.")
 config_app = typer.Typer(help="Inspect Passagen configuration.")
@@ -43,9 +44,15 @@ logger = logging.getLogger(__name__)
 
 
 class AppState:
-    def __init__(self, settings: Settings, execution_log_dir: Path) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        execution_log_dir: Path,
+        provider_health: ProviderHealthSnapshot,
+    ) -> None:
         self.settings = settings
         self.execution_log_dir = execution_log_dir
+        self.provider_health = provider_health
 
 
 class ConsoleProgress:
@@ -107,8 +114,17 @@ def main(
         settings.resolved_database_path,
         settings.debug,
     )
+    provider_health = check_provider_health(settings.providers)
+    for status in provider_health.statuses.values():
+        log = logger.info if status.available else logger.warning
+        log(
+            "provider health: provider=%s available=%s detail=%s",
+            status.name,
+            status.available,
+            status.detail,
+        )
     ctx.call_on_close(lambda: logger.info("execution finished: command=%s", command))
-    ctx.obj = AppState(settings, execution_log_dir)
+    ctx.obj = AppState(settings, execution_log_dir, provider_health)
 
 
 @config_app.command("check")
@@ -237,6 +253,7 @@ def metadata_command(
                 paper_id,
                 settings.pipeline.metadata,
                 settings.providers,
+                provider_health=_state(ctx).provider_health,
                 force=force,
                 progress=progress.update,
             )
@@ -274,6 +291,7 @@ def update_command(
                 settings.providers,
                 settings.pipeline,
                 paper_id,
+                provider_health=_state(ctx).provider_health,
                 execution_log_dir=_state(ctx).execution_log_dir,
                 force=force,
                 progress=progress.update,
@@ -327,6 +345,7 @@ def parse_command(
                 paper_id,
                 settings.pipeline.parsing,
                 settings.providers.grobid,
+                provider_health=_state(ctx).provider_health,
                 parser=parser,
                 force=force,
                 progress=progress.update,
@@ -363,6 +382,7 @@ def summarize_command(
                 paper_id,
                 settings.providers.llm,
                 settings.pipeline.summarization,
+                provider_health=_state(ctx).provider_health,
                 execution_log_dir=_state(ctx).execution_log_dir,
                 force=force,
                 progress=progress.update,

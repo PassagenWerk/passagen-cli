@@ -7,12 +7,13 @@ from pathlib import Path
 
 from passagen.config import PipelineSettings, ProvidersSettings
 from passagen.llm import LlmProvider
-from passagen.metadata_service import MetadataResolutionError, resolve_paper_metadata
 from passagen.models import PaperStatus
-from passagen.parsing_service import PaperParsingError, parse_paper
-from passagen.progress import ProgressCallback, report_progress
+from passagen.providers import ProviderHealthSnapshot
 from passagen.repository import PaperRecord, get_paper, list_papers
-from passagen.summarization import SummaryError, summarize_paper
+from passagen.stages.metadata import MetadataResolutionError, resolve_paper_metadata
+from passagen.stages.parsing import PaperParsingError, parse_paper
+from passagen.stages.progress import ProgressCallback, report_progress
+from passagen.stages.summarization import SummaryError, summarize_paper
 
 LATEST_IMPLEMENTED_STATUS = PaperStatus.SUMMARIZED
 _UPDATE_PENDING_STATUSES = {
@@ -50,6 +51,7 @@ def update_papers(
     paper_id: str | None = None,
     *,
     summary_provider: LlmProvider | None = None,
+    provider_health: ProviderHealthSnapshot | None = None,
     execution_log_dir: Path | None = None,
     force: bool = False,
     progress: ProgressCallback | None = None,
@@ -129,6 +131,7 @@ def update_papers(
                     paper.id,
                     pipeline.metadata,
                     providers,
+                    provider_health=provider_health,
                     force=force,
                     progress=partial(
                         _report_paper_progress,
@@ -163,6 +166,7 @@ def update_papers(
                     paper.id,
                     pipeline.parsing,
                     providers.grobid,
+                    provider_health=provider_health,
                     force=force,
                     progress=partial(
                         _report_paper_progress,
@@ -197,6 +201,7 @@ def update_papers(
                     paper.id,
                     providers.llm,
                     pipeline.summarization,
+                    provider_health=provider_health,
                     execution_log_dir=execution_log_dir,
                     force=force,
                     provider=summary_provider,

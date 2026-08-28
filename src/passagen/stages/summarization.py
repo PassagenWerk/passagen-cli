@@ -16,7 +16,7 @@ from passagen.config import LlmSettings, SummarizationSettings
 from passagen.llm import LlmProvider, LlmProviderError, LlmResponse, OpenAICompatibleProvider
 from passagen.models import PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
-from passagen.progress import ProgressCallback, report_progress
+from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
 from passagen.repository import (
     ArtifactRecord,
     PaperRecord,
@@ -28,6 +28,7 @@ from passagen.repository import (
     start_processing_run,
     update_paper_status,
 )
+from passagen.stages.progress import ProgressCallback, report_progress
 
 logger = logging.getLogger(__name__)
 SUMMARY_SCHEMA_VERSION = "1"
@@ -151,6 +152,7 @@ def summarize_paper(
     settings: LlmSettings,
     summarization: SummarizationSettings,
     *,
+    provider_health: ProviderHealthSnapshot | None = None,
     force: bool = False,
     provider: LlmProvider | None = None,
     execution_log_dir: Path | None = None,
@@ -175,6 +177,11 @@ def summarize_paper(
     except (OSError, ValidationError) as exc:
         raise SummaryError(f"Cannot load parsed paper for summarization: {exc}") from exc
 
+    if provider_health is not None:
+        try:
+            provider_health.require("llm")
+        except ProviderUnavailableError as exc:
+            raise SummaryError(str(exc)) from exc
     llm = provider or OpenAICompatibleProvider(settings)
     run_id = start_processing_run(database_path, paper_id, "summarize")
     facts_dir = data_dir / "papers" / paper_id / "summary" / "facts"

@@ -23,9 +23,9 @@ from passagen.metadata import (
     normalize_arxiv_id,
     normalize_doi,
 )
-from passagen.metadata_service import resolve_paper_metadata
 from passagen.models import PaperStatus
-from passagen.scanning import scan_directory
+from passagen.stages.metadata import resolve_paper_metadata
+from passagen.stages.scanning import scan_directory
 
 
 def write_pdf(
@@ -541,7 +541,7 @@ def test_resolve_metadata_uses_grobid_to_recover_crossref_conflict(tmp_path: Pat
 
     log_output = io.StringIO()
     log_handler = logging.StreamHandler(log_output)
-    service_logger = logging.getLogger("passagen.metadata_service")
+    service_logger = logging.getLogger("passagen.stages.metadata")
     previous_level = service_logger.level
     service_logger.addHandler(log_handler)
     service_logger.setLevel(logging.INFO)

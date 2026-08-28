@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-import passagen.scanning
+import passagen.stages.scanning
 from passagen.repository import list_papers
-from passagen.scanning import ScanDirectoryError, scan_directory
+from passagen.stages.scanning import ScanDirectoryError, scan_directory
 
 
 def write_pdf(path: Path, content: bytes = b"content") -> bytes:
@@ -124,7 +124,7 @@ def test_database_failure_removes_unreferenced_managed_file(
     def fail_registration(*args: object, **kwargs: object) -> None:
         raise sqlite3.OperationalError("database unavailable")
 
-    monkeypatch.setattr(passagen.scanning, "register_pdf", fail_registration)
+    monkeypatch.setattr(passagen.stages.scanning, "register_pdf", fail_registration)
 
     result = scan_directory(source_dir, data_dir=data_dir, database_path=database_path)
 
