@@ -209,7 +209,13 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
     result = runner.invoke(app, [*common, "update", papers["first.pdf"].id])
 
     assert result.exit_code == 0
+    assert "Paper 1/1 [stage 1/2: metadata]" in result.stdout
+    assert "Paper 1/1 [stage 2/2: full text]" in result.stdout
     assert "updated: 1, skipped: 0, failed: 0" in result.stdout
+    update_log = (tmp_path / "logs" / "latest").read_text(encoding="utf-8")
+    assert "update stage started:" in update_log
+    assert "stage=metadata" in update_log
+    assert "stage=full_text" in update_log
     current = {paper.original_filename: paper for paper in list_papers(data_dir / "passagen.db")}
     assert current["first.pdf"].status.value == "parsed"
     assert current["second.pdf"].status.value == "discovered"

@@ -90,7 +90,10 @@ def scan_directory(
         except (InvalidPdfError, OSError, RuntimeError, sqlite3.Error) as exc:
             logger.error("scan import failed: file=%s error=%s", source_path, exc)
             result.failures.append(ScanFailure(source_path, str(exc)))
-            report_progress(progress, f"Failed to import {source_path.name}; continuing.")
+            report_progress(
+                progress,
+                f"PDF {index}/{len(candidates)}: failed to import {source_path.name}; continuing.",
+            )
             continue
         (result.imported if created else result.skipped).append(record)
         if created:
@@ -101,7 +104,10 @@ def scan_directory(
                 record.pdf_sha256,
                 record.managed_pdf_path,
             )
-            report_progress(progress, f"Imported {source_path.name}.")
+            report_progress(
+                progress,
+                f"PDF {index}/{len(candidates)}: imported {source_path.name}.",
+            )
         else:
             logger.info(
                 "scan skipped duplicate: file=%s existing_paper_id=%s sha256=%s",
@@ -109,7 +115,10 @@ def scan_directory(
                 record.id,
                 record.pdf_sha256,
             )
-            report_progress(progress, f"Skipped duplicate {source_path.name}.")
+            report_progress(
+                progress,
+                f"PDF {index}/{len(candidates)}: skipped duplicate {source_path.name}.",
+            )
     logger.info(
         "scan finished: imported=%s skipped=%s failed=%s",
         len(result.imported),
