@@ -162,10 +162,7 @@ def summarize_paper(
     if paper is None:
         raise SummaryError(f"Paper not found: {paper_id}")
     existing = get_artifact(database_path, paper_id, SUMMARY_ARTIFACT_KIND)
-    if (
-        paper.status in {PaperStatus.SUMMARIZED, PaperStatus.OUTLINED, PaperStatus.COMPLETED}
-        and not force
-    ):
+    if paper.status in {PaperStatus.SUMMARIZED, PaperStatus.OUTLINED} and not force:
         return SummaryResult(paper, existing, None, updated=False)
     extracted = get_artifact(database_path, paper_id, EXTRACTED_ARTIFACT_KIND)
     if extracted is None:
@@ -176,6 +173,8 @@ def summarize_paper(
         )
     except (OSError, ValidationError) as exc:
         raise SummaryError(f"Cannot load parsed paper for summarization: {exc}") from exc
+    if force and paper.status is not PaperStatus.PARSED:
+        update_paper_status(database_path, paper_id, PaperStatus.PARSED)
 
     if provider_health is not None:
         try:
@@ -240,9 +239,11 @@ def summarize_paper(
         )
     except (LlmProviderError, SummaryError) as exc:
         finish_processing_run(database_path, run_id, error_message=str(exc))
-        update_paper_status(database_path, paper_id, PaperStatus.FAILED)
         logger.error("summary failed: paper_id=%s error=%s", paper_id, exc)
         raise SummaryError(str(exc)) from exc
+    except KeyboardInterrupt:
+        finish_processing_run(database_path, run_id, error_message="interrupted")
+        raise
     finish_processing_run(database_path, run_id)
     report_progress(progress, "Structured summary saved.")
     logger.info("summary finished: paper_id=%s artifact=%s", paper_id, json_path)

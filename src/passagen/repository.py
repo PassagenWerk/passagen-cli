@@ -186,6 +186,16 @@ def get_artifact(
     return _artifact_record(row) if row is not None else None
 
 
+def list_artifacts(database_path: Path) -> list[ArtifactRecord]:
+    _require_database(database_path)
+    with connect_database(database_path) as connection:
+        rows = connection.execute(
+            "SELECT id, paper_id, kind, path, version, sha256, size_bytes "
+            "FROM artifacts ORDER BY created_at, id"
+        ).fetchall()
+    return [_artifact_record(row) for row in rows]
+
+
 def save_parsed_artifact(
     database_path: Path,
     paper_id: str,

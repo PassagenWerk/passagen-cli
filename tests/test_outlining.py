@@ -188,6 +188,32 @@ def test_updated_summary_marks_existing_outline_stale(tmp_path: Path) -> None:
     assert "Updated Paper" in provider.prompts[0]
 
 
+def test_forced_outline_failure_stops_at_summarized(tmp_path: Path) -> None:
+    database_path, data_dir, paper_id = setup_summarized_paper(tmp_path)
+    outline_paper(
+        database_path,
+        data_dir,
+        paper_id,
+        LlmSettings(),
+        OutliningSettings(),
+        provider=FakeProvider(valid_outline()),
+    )
+
+    with pytest.raises(OutlineError):
+        outline_paper(
+            database_path,
+            data_dir,
+            paper_id,
+            LlmSettings(),
+            OutliningSettings(),
+            force=True,
+            provider=FakeProvider("invalid"),
+        )
+
+    with connect_database(database_path) as connection:
+        assert connection.execute("SELECT status FROM papers").fetchone()[0] == "summarized"
+
+
 def test_outline_rejects_non_chinese_or_unknown_content(tmp_path: Path) -> None:
     database_path, data_dir, paper_id = setup_summarized_paper(tmp_path)
     provider = FakeProvider(
@@ -222,7 +248,7 @@ def test_outline_rejects_non_chinese_or_unknown_content(tmp_path: Path) -> None:
     )
     assert diagnostic["response"] == provider.response
     with connect_database(database_path) as connection:
-        assert connection.execute("SELECT status FROM papers").fetchone()[0] == "failed"
+        assert connection.execute("SELECT status FROM papers").fetchone()[0] == "summarized"
         assert connection.execute("SELECT status FROM processing_runs").fetchone()[0] == "failed"
 
 

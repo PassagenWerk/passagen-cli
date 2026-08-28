@@ -19,7 +19,6 @@ from passagen.stages.summarization import SummaryError, summarize_paper
 LATEST_IMPLEMENTED_STATUS = PaperStatus.OUTLINED
 _UPDATE_PENDING_STATUSES = {
     PaperStatus.DISCOVERED,
-    PaperStatus.FAILED,
     PaperStatus.METADATA_RESOLVED,
     PaperStatus.PARSED,
     PaperStatus.SUMMARIZED,
@@ -99,37 +98,12 @@ def update_papers(
         try:
             current = paper
             warnings: list[str] = []
-            needs_metadata = force or current.status in {
-                PaperStatus.DISCOVERED,
-                PaperStatus.FAILED,
-            }
+            needs_metadata = force or current.status is PaperStatus.DISCOVERED
             needs_parsing = (
-                force
-                or needs_metadata
-                or current.status
-                in {
-                    PaperStatus.METADATA_RESOLVED,
-                    PaperStatus.FAILED,
-                }
+                force or needs_metadata or current.status is PaperStatus.METADATA_RESOLVED
             )
-            needs_summary = (
-                force
-                or needs_parsing
-                or current.status
-                in {
-                    PaperStatus.PARSED,
-                    PaperStatus.FAILED,
-                }
-            )
-            needs_outline = (
-                force
-                or needs_summary
-                or current.status
-                in {
-                    PaperStatus.SUMMARIZED,
-                    PaperStatus.FAILED,
-                }
-            )
+            needs_summary = force or needs_parsing or current.status is PaperStatus.PARSED
+            needs_outline = force or needs_summary or current.status is PaperStatus.SUMMARIZED
             stage_total = (
                 int(needs_metadata) + int(needs_parsing) + int(needs_summary) + int(needs_outline)
             )

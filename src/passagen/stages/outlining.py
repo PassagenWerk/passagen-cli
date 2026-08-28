@@ -94,7 +94,7 @@ def outline_paper(
     if paper is None:
         raise OutlineError(f"Paper not found: {paper_id}")
     existing = get_artifact(database_path, paper_id, OUTLINE_ARTIFACT_KIND)
-    if paper.status in {PaperStatus.OUTLINED, PaperStatus.COMPLETED} and not force:
+    if paper.status is PaperStatus.OUTLINED and not force:
         return OutlineResult(paper, existing, None, updated=False)
     summary_artifact = get_artifact(database_path, paper_id, SUMMARY_ARTIFACT_KIND)
     if summary_artifact is None:
@@ -108,6 +108,8 @@ def outline_paper(
         raise OutlineError(
             f"Unsupported summary schema version for outlining: {summary.schema_version}"
         )
+    if force and paper.status is not PaperStatus.SUMMARIZED:
+        update_paper_status(database_path, paper_id, PaperStatus.SUMMARIZED)
 
     if provider_health is not None:
         try:
@@ -190,7 +192,6 @@ def outline_paper(
                 error_message=str(exc),
             )
         finish_processing_run(database_path, run_id, error_message=str(exc))
-        update_paper_status(database_path, paper_id, PaperStatus.FAILED)
         _write_diagnostic(
             diagnostic_path,
             prompt,
@@ -201,6 +202,9 @@ def outline_paper(
         )
         logger.error("outline failed: paper_id=%s error=%s", paper_id, exc)
         raise OutlineError(f"Chinese outline generation failed: {exc}") from exc
+    except KeyboardInterrupt:
+        finish_processing_run(database_path, run_id, error_message="interrupted")
+        raise
     finish_processing_run(database_path, run_id)
     report_progress(progress, "Chinese outline saved.")
     logger.info("outline finished: paper_id=%s artifact=%s", paper_id, markdown_path)

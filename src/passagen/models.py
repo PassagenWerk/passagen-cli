@@ -11,24 +11,14 @@ class PaperStatus(StrEnum):
     METADATA_RESOLVED = "metadata_resolved"
     SUMMARIZED = "summarized"
     OUTLINED = "outlined"
-    COMPLETED = "completed"
-    FAILED = "failed"
 
 
 ALLOWED_STATUS_TRANSITIONS: dict[PaperStatus, set[PaperStatus]] = {
-    PaperStatus.DISCOVERED: {PaperStatus.METADATA_RESOLVED, PaperStatus.FAILED},
-    PaperStatus.METADATA_RESOLVED: {PaperStatus.PARSED, PaperStatus.FAILED},
-    PaperStatus.PARSED: {PaperStatus.SUMMARIZED, PaperStatus.FAILED},
-    PaperStatus.SUMMARIZED: {PaperStatus.OUTLINED, PaperStatus.FAILED},
-    PaperStatus.OUTLINED: {PaperStatus.COMPLETED, PaperStatus.FAILED},
-    PaperStatus.COMPLETED: set(),
-    PaperStatus.FAILED: {
-        PaperStatus.DISCOVERED,
-        PaperStatus.PARSED,
-        PaperStatus.METADATA_RESOLVED,
-        PaperStatus.SUMMARIZED,
-        PaperStatus.OUTLINED,
-    },
+    PaperStatus.DISCOVERED: {PaperStatus.METADATA_RESOLVED},
+    PaperStatus.METADATA_RESOLVED: {PaperStatus.PARSED},
+    PaperStatus.PARSED: {PaperStatus.SUMMARIZED},
+    PaperStatus.SUMMARIZED: {PaperStatus.OUTLINED},
+    PaperStatus.OUTLINED: set(),
 }
 
 

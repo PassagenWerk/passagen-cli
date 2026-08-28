@@ -28,9 +28,8 @@
 - `PyYAML`：分区 YAML 配置解析
 - Python 标准库 `sqlite3`：持久化、显式 SQL 和事务
 - SQLite `PRAGMA user_version`：轻量 Schema 版本管理
-- `httpx`：GROBID、Crossref 和 arXiv API 请求
-- `openai`：OpenAI-compatible LLM API
-- `lxml`：GROBID TEI XML 解析
+- `httpx`：GROBID、Crossref、arXiv 和 OpenAI-compatible LLM API 请求
+- Python 标准库 XML parser：GROBID TEI XML 解析
 - `PyMuPDF`：轻量及降级 PDF 解析
 - `Rich`：CLI 输出
 - `pytest` 和 `respx`：测试与 HTTP mock
@@ -265,32 +264,33 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 
 ## M7：完整流水线与恢复能力
 
+状态：已实现。
+
 ### 工作内容
 
 - 实现各阶段编排和状态持久化。
 - 随已实现阶段扩展 `update [paper-id]` 的目标，不改变其单篇/全量接口。
-- 实现失败阶段重试、幂等执行和 `--force` 显式重建。
+- 阶段失败时保留最后成功状态，由调用者重新执行 `update`；不在程序内自动重试。
+- 保持幂等执行和 `--force` 从 metadata 显式重建。
 - 在受管理存储中保存 PDF，并在论文 artifact 目录中保存解析结果、摘要和 outline。
-- 增加 GROBID、Crossref、arXiv 和 LLM 的超时及指数退避。
-- 中断信号到达时完成当前数据库写入并安全退出。
+- 中断时终止当前 processing run，不推进 Paper 状态，并依靠短事务和原子文件写入安全退出。
 - 提供单篇论文和批量处理进度。
 
 ### 交付物
 
-- `passagen process [paper-id]`
-- `passagen retry [paper-id]`
 - `passagen run <directory>`
-- 端到端处理报告
 
 ### 验收条件
 
 - `run` 可以从空数据库完成扫描、解析、摘要、outline 和归档。
 - 对同一目录再次运行不会重复调用 Crossref、arXiv 或 LLM。
-- 任意阶段失败后，`retry` 从失败阶段恢复。
-- `Ctrl+C` 不会留下错误的 completed 状态或损坏数据库。
+- 任意阶段失败后，再次执行 `update` 会从最后成功阶段恢复。
+- `Ctrl+C` 不会推进 Paper 状态或损坏数据库。
 - 单篇论文处理具备不依赖真实外部 API 的端到端测试。
 
 ## M8：首版发布准备
+
+状态：已实现；真实 GROBID/LLM 联调作为发布前人工验收执行。
 
 ### 工作内容
 

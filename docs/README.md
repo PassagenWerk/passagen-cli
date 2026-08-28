@@ -10,6 +10,7 @@
 | 查看版本范围、里程碑和验收条件 | [`roadmap.md`](roadmap.md) |
 | 判断新代码应该放在哪里 | [`architecture.md`](architecture.md) |
 | 编写、测试和检查 Python 代码 | [`code-style.md`](code-style.md) |
+| 安装、配置、GROBID 与故障排查 | [`operations.md`](operations.md) |
 
 ## 文档类型
 
@@ -20,6 +21,7 @@
 | `architecture.md` | 包职责、依赖方向、跨模块 contract 和扩展规则 |
 | `code-style.md` | 可执行的编码、类型、错误处理和测试约定 |
 | `roadmap.md` | 尚未实现或正在推进的工作及验收条件 |
+| `operations.md` | 安装、运行、备份、迁移和常见错误 |
 
 ## 维护规则
 

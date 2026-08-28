@@ -21,6 +21,7 @@ from passagen.repository import (
     get_artifact,
     get_paper,
     save_parsed_artifact,
+    update_paper_status,
 )
 from passagen.stages.progress import ProgressCallback, report_progress
 
@@ -61,18 +62,19 @@ def parse_paper(
     if paper is None:
         raise PaperParsingError("paper_not_found", f"Paper not found: {paper_id}")
     existing = get_artifact(database_path, paper_id, EXTRACTED_ARTIFACT_KIND)
-    if paper.status not in {PaperStatus.METADATA_RESOLVED, PaperStatus.FAILED} and not force:
+    if paper.status is not PaperStatus.METADATA_RESOLVED and not force:
         if paper.status in {
             PaperStatus.PARSED,
             PaperStatus.SUMMARIZED,
             PaperStatus.OUTLINED,
-            PaperStatus.COMPLETED,
         }:
             return PaperParsingResult(paper=paper, artifact=existing, parsed=None, updated=False)
         raise PaperParsingError(
             "metadata_required",
             f"Paper must have resolved metadata before parsing: {paper_id}",
         )
+    if force and paper.status is not PaperStatus.METADATA_RESOLVED:
+        update_paper_status(database_path, paper_id, PaperStatus.METADATA_RESOLVED)
     if paper.managed_pdf_path is None:
         raise PaperParsingError("missing_pdf", f"Paper has no managed PDF artifact: {paper_id}")
     pdf_path = data_dir / paper.managed_pdf_path
@@ -112,11 +114,6 @@ def parse_paper(
     content = (parsed.model_dump_json(indent=2) + "\n").encode()
     _atomic_write(data_dir / relative_path, content)
     digest = hashlib.sha256(content).hexdigest()
-    target_status = (
-        PaperStatus.PARSED
-        if paper.status in {PaperStatus.METADATA_RESOLVED, PaperStatus.FAILED}
-        else paper.status
-    )
     updated, artifact = save_parsed_artifact(
         database_path,
         paper_id,
@@ -124,7 +121,7 @@ def parse_paper(
         version=parsed.schema_version,
         sha256=digest,
         size_bytes=len(content),
-        status=target_status,
+        status=PaperStatus.PARSED,
     )
     logger.info(
         "parse finished: paper_id=%s parser=%s sections=%s references=%s artifact=%s",

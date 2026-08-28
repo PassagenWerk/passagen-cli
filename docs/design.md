@@ -34,8 +34,7 @@ Passagen 是一个通过 CLI 整理 paper PDF，并调用 LLM 生成结构化英
 处理状态至少包括：
 
 ```text
-discovered -> metadata_resolved -> parsed -> summarized -> outlined -> completed
-                                                                  \-> failed
+discovered -> metadata_resolved -> parsed -> summarized -> outlined
 ```
 
 每一步成功后持久化状态。重新执行时从最后一个成功阶段继续，而不是重新调用全部外部服务。
@@ -49,8 +48,6 @@ passagen scan <directory>       # 扫描目录并登记新 PDF
 passagen metadata <paper-id>    # 识别标识并补全基础元数据
 passagen update [paper-id] [--force]    # 推进指定或全部论文；强制重建全部阶段
 passagen summarize <paper-id> [--force] # 生成经过 Schema 校验的英文结构化摘要
-passagen process [paper-id]     # 处理全部待处理论文或指定论文
-passagen retry [paper-id]       # 重试失败任务
 passagen list                   # 查看论文和处理状态
 passagen show <paper-id>        # 查看元数据和产物路径
 ```
@@ -58,6 +55,8 @@ passagen show <paper-id>        # 查看元数据和产物路径
 `metadata` 用于显式执行或 `--force` 单篇元数据阶段。`update` 是幂等的阶段编排入口：指定 `paper-id` 时只推进该 Paper，省略时推进数据库中所有落后于当前开发前沿的 Paper，已达到或超过目标状态的记录直接跳过；传入 `--force` 时从 metadata 开始重新执行到当前开发前沿。批量中单篇失败不阻断其余记录，但命令最终返回非零状态。当前前沿是 `outlined`。
 
 `scan` 和处理流程保持分离，便于在调用外部服务前检查新论文。M7 的 `passagen run <directory>` 将组合 scan 与 update，形成从目录开始的完整入口。
+
+阶段失败时 Paper 保持在最后一个成功状态，不进入单独的失败状态。调用者修复问题后手动再次执行 `update`，程序从该状态的下一阶段继续；`--force` 会先使下游结果失效，并从 metadata 开始完整重建。程序不会在一次执行内自动重试外部请求。
 
 ## 执行日志
 
@@ -240,7 +239,7 @@ LLM 必须使用支持结构化输出的调用方式；无论供应商是否声�
 2. 使用 Schema 校验字段、类型和必填项。
 3. 对可确定的格式问题执行本地修复，例如移除 Markdown code fence、将缺失的可空字段补为 `null`。
 4. 仍不合法时，将校验错误和原始结果交给模型修复，最多重试两次。
-5. 仍然失败则保存原始响应和错误信息，并将任务标记为 `failed`。
+5. 仍然失败则保存原始响应和错误信息，Paper 保持在 `parsed`。
 
 本地修复不得改写摘要语义，也不得自动生成论文中不存在的内容。
 

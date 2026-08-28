@@ -58,6 +58,18 @@ def test_sha256_is_unique(tmp_path: Path) -> None:
         insert_paper(connection, "paper-2", "a" * 64)
 
 
+@pytest.mark.parametrize("status", ["failed", "completed"])
+def test_removed_paper_statuses_are_rejected(tmp_path: Path, status: str) -> None:
+    database_path = tmp_path / "passagen.db"
+    initialize_database(database_path)
+
+    with pytest.raises(sqlite3.IntegrityError), connect_database(database_path) as connection:
+        connection.execute(
+            "INSERT INTO papers (id, original_filename, pdf_sha256, status) VALUES (?, ?, ?, ?)",
+            ("paper-1", "paper.pdf", "a" * 64, status),
+        )
+
+
 def test_managed_pdf_is_recorded_as_relative_artifact_path(tmp_path: Path) -> None:
     database_path = tmp_path / "passagen.db"
     initialize_database(database_path)

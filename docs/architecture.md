@@ -55,7 +55,7 @@ Settings + command input
   -> section fact artifacts
   -> validated StructuredSummary artifact
   -> Chinese outline artifact
-  -> completed Paper
+  -> outlined Paper
 ```
 
 数据库保存身份、阶段状态、版本和 artifact 索引；文件系统保存 PDF 与较大的结构化产物。扫描目录只作为一次性导入源，后续阶段读取 `data_dir` 下已提交的受管理 artifact，而不是源路径或上一个函数仍在内存中的临时对象，因此源文件移走和进程中断都不影响恢复。
@@ -131,7 +131,6 @@ Pipeline 与 Denkbild 的 compiler pipeline 保持相同职责边界：只决定
 | `parse` | managed PDF artifact | ParsedPaper artifact | parsing |
 | `summarize` | ParsedPaper | validated summary | summarization/providers |
 | `outline` | validated summary | Markdown outline | outlining/providers |
-| `complete` | 必需 artifacts | completed status | pipeline/storage |
 
 每个 stage 应具备：
 

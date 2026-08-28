@@ -23,8 +23,7 @@ MIGRATIONS = {
             pdf_sha256 TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'discovered' CHECK (
                 status IN (
-                    'discovered', 'parsed', 'metadata_resolved', 'summarized',
-                    'outlined', 'completed', 'failed'
+                    'discovered', 'parsed', 'metadata_resolved', 'summarized', 'outlined'
                 )
             ),
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -79,6 +78,21 @@ MIGRATIONS = {
 
 class DatabaseVersionError(RuntimeError):
     pass
+
+
+def backup_database(database_path: Path, destination: Path) -> Path:
+    source = database_path.expanduser().resolve()
+    target = destination.expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"Database is not initialized: {source}")
+    if source == target:
+        raise ValueError("Backup destination must differ from the active database")
+    if target.exists():
+        raise FileExistsError(f"Backup destination already exists: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(source) as source_connection, sqlite3.connect(target) as target_connection:
+        source_connection.backup(target_connection)
+    return target
 
 
 def initialize_database(database_path: Path) -> None:

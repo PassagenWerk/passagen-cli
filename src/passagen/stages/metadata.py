@@ -25,6 +25,7 @@ from passagen.repository import (
     PaperRecord,
     get_paper,
     update_paper_metadata,
+    update_paper_status,
 )
 from passagen.stages.progress import ProgressCallback, report_progress
 
@@ -67,13 +68,15 @@ def resolve_paper_metadata(
         force,
         paper.original_filename,
     )
-    if paper.status not in {PaperStatus.DISCOVERED, PaperStatus.FAILED} and not force:
+    if paper.status is not PaperStatus.DISCOVERED and not force:
         logger.info(
             "metadata skipped: paper_id=%s status=%s reason=already_resolved",
             paper.id,
             paper.status.value,
         )
         return MetadataResolutionResult(paper=paper, updated=False)
+    if force and paper.status is not PaperStatus.DISCOVERED:
+        update_paper_status(database_path, paper_id, PaperStatus.DISCOVERED)
     if paper.managed_pdf_path is None:
         logger.error("metadata failed: paper_id=%s reason=no_managed_pdf", paper.id)
         raise MetadataResolutionError(f"Paper has no managed PDF artifact: {paper_id}")
@@ -217,14 +220,11 @@ def resolve_paper_metadata(
         crossref_metadata,
         existing,
     )
-    target_status = (
-        PaperStatus.METADATA_RESOLVED
-        if paper.status in {PaperStatus.DISCOVERED, PaperStatus.FAILED}
-        else paper.status
-    )
     report_progress(progress, "Saving resolved metadata...")
     try:
-        updated = update_paper_metadata(database_path, paper_id, metadata, target_status)
+        updated = update_paper_metadata(
+            database_path, paper_id, metadata, PaperStatus.METADATA_RESOLVED
+        )
     except MetadataConflictError as exc:
         logger.error("metadata persistence failed: paper_id=%s error=%s", paper.id, exc)
         raise MetadataResolutionError(str(exc)) from exc

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -16,7 +17,8 @@ from passagen.cli.logging import (
     set_execution_log_level,
 )
 from passagen.config import ConfigError, ParserBackend, Settings, load_settings
-from passagen.db import current_version, initialize_database
+from passagen.db import backup_database, current_version, initialize_database
+from passagen.maintenance import check_artifacts
 from passagen.models import PaperStatus
 from passagen.providers import ProviderHealthSnapshot, check_provider_health
 from passagen.repository import (
@@ -29,6 +31,7 @@ from passagen.repository import (
 from passagen.stages.metadata import MetadataResolutionError, resolve_paper_metadata
 from passagen.stages.outlining import OutlineError, outline_paper
 from passagen.stages.parsing import PaperParsingError, parse_paper
+from passagen.stages.running import run_pipeline
 from passagen.stages.scanning import ScanDirectoryError, scan_directory
 from passagen.stages.summarization import SummaryError, summarize_paper
 from passagen.stages.updating import UpdateTargetError, update_papers
@@ -37,9 +40,11 @@ app = typer.Typer(help="Manage paper PDFs and generate structured summaries.")
 config_app = typer.Typer(help="Inspect Passagen configuration.")
 db_app = typer.Typer(help="Manage the Passagen database.")
 logs_app = typer.Typer(help="Manage Passagen execution logs.")
+artifacts_app = typer.Typer(help="Inspect managed artifacts.")
 app.add_typer(config_app, name="config")
 app.add_typer(db_app, name="db")
 app.add_typer(logs_app, name="logs")
+app.add_typer(artifacts_app, name="artifacts")
 console = Console()
 logger = logging.getLogger(__name__)
 
@@ -115,7 +120,12 @@ def main(
         settings.resolved_database_path,
         settings.debug,
     )
-    provider_health = check_provider_health(settings.providers)
+    provider_commands = {"metadata", "update", "parse", "summarize", "outline", "run"}
+    provider_health = (
+        check_provider_health(settings.providers)
+        if command in provider_commands
+        else ProviderHealthSnapshot({})
+    )
     for status in provider_health.statuses.values():
         log = logger.info if status.available else logger.warning
         log(
@@ -173,11 +183,58 @@ def db_status(ctx: typer.Context) -> None:
     console.print(f"Database schema version: {version}")
 
 
+@db_app.command("backup")
+def db_backup(
+    ctx: typer.Context,
+    destination: Annotated[
+        Path | None,
+        typer.Argument(help="Backup file. Defaults to data_dir/backups/ with a timestamp."),
+    ] = None,
+) -> None:
+    settings = _state(ctx).settings
+    target = destination or (
+        settings.resolved_data_dir
+        / "backups"
+        / f"passagen-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.db"
+    )
+    try:
+        backup = backup_database(settings.resolved_database_path, target)
+    except (FileNotFoundError, FileExistsError, ValueError) as exc:
+        logger.error("database backup failed: %s", exc)
+        console.print(f"[red]Backup error:[/red] {exc}", highlight=False)
+        raise typer.Exit(code=1) from exc
+    logger.info(
+        "database backup created: source=%s target=%s",
+        settings.resolved_database_path,
+        backup,
+    )
+    console.print(f"Database backup created: {backup}", markup=False)
+
+
 @logs_app.command("clean")
 def logs_clean(ctx: typer.Context) -> None:
     state = _state(ctx)
     moved = archive_execution_logs(exclude=(state.execution_log_dir,))
     console.print(f"Archived {len(moved)} execution log(s) to logs/old.")
+
+
+@artifacts_app.command("check")
+def artifacts_check(ctx: typer.Context) -> None:
+    settings = _state(ctx).settings
+    try:
+        result = check_artifacts(settings.resolved_database_path, settings.resolved_data_dir)
+    except DatabaseNotInitializedError as exc:
+        logger.error("artifact check failed: %s", exc)
+        console.print(f"[red]Artifact check error:[/red] {exc}", highlight=False)
+        raise typer.Exit(code=1) from exc
+    for issue in result.issues:
+        console.print(
+            f"[red]Invalid:[/red] {issue.artifact.kind} {issue.artifact.path}: {issue.message}",
+            highlight=False,
+        )
+    console.print(f"Checked: {result.checked}; invalid: {len(result.issues)}")
+    if result.issues:
+        raise typer.Exit(code=1)
 
 
 @app.command("scan")
@@ -215,6 +272,51 @@ def scan(
         f"failed: {len(result.failures)}"
     )
     if result.failures:
+        raise typer.Exit(code=1)
+
+
+@app.command("run")
+def run_command(
+    ctx: typer.Context,
+    directory: Annotated[Path, typer.Argument(help="Directory containing PDF files.")],
+    recursive: Annotated[
+        bool,
+        typer.Option("--recursive/--no-recursive", help="Scan nested directories."),
+    ] = True,
+) -> None:
+    state = _state(ctx)
+    settings = state.settings
+    try:
+        with ConsoleProgress(console, "Starting Passagen pipeline...") as progress:
+            result = run_pipeline(
+                directory,
+                database_path=settings.resolved_database_path,
+                data_dir=settings.resolved_data_dir,
+                providers=settings.providers,
+                pipeline=settings.pipeline,
+                recursive=recursive,
+                provider_health=state.provider_health,
+                execution_log_dir=state.execution_log_dir,
+                progress=progress.update,
+            )
+    except ScanDirectoryError as exc:
+        logger.error("run command failed during scan: %s", exc)
+        console.print(f"[red]Run error:[/red] {exc}", highlight=False)
+        raise typer.Exit(code=2) from exc
+    for failure in result.scan.failures:
+        console.print(f"[red]Scan failed:[/red] {failure.path}: {failure.message}", highlight=False)
+    for failure in result.update.failures:
+        console.print(
+            f"[red]Update failed:[/red] {failure.paper_id}: {failure.message}",
+            highlight=False,
+        )
+    console.print(
+        f"Imported: {len(result.scan.imported)}, skipped: {len(result.scan.skipped)}, "
+        f"scan failed: {len(result.scan.failures)}; "
+        f"updated: {len(result.update.updated)}, update skipped: {len(result.update.skipped)}, "
+        f"update failed: {len(result.update.failures)}"
+    )
+    if result.scan.failures or result.update.failures:
         raise typer.Exit(code=1)
 
 

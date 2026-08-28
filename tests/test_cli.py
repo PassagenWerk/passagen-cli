@@ -43,9 +43,11 @@ def isolate_cli_working_directory(
 class _FakeLlmProvider:
     provider_name = "fake"
     model = "test-model"
+    calls = 0
 
     def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse:
         del max_tokens
+        type(self).calls += 1
         if "Extract only the facts" in prompt:
             return LlmResponse('{"facts": []}')
         if "Generate a concise Chinese outline" in prompt:
@@ -114,6 +116,23 @@ def test_database_init_and_status(tmp_path: Path) -> None:
     result = runner.invoke(app, ["--data-dir", str(data_dir), "db", "status"])
     assert result.exit_code == 0
     assert "schema version: 1" in result.stdout
+
+
+def test_database_backup_and_artifact_check_commands(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    assert runner.invoke(app, ["--data-dir", str(data_dir), "db", "init"]).exit_code == 0
+    backup = tmp_path / "backup.db"
+
+    result = runner.invoke(
+        app,
+        ["--data-dir", str(data_dir), "db", "backup", str(backup)],
+    )
+
+    assert result.exit_code == 0
+    assert backup.is_file()
+    result = runner.invoke(app, ["--data-dir", str(data_dir), "artifacts", "check"])
+    assert result.exit_code == 0
+    assert "Checked: 0; invalid: 0" in result.stdout
 
 
 def test_scan_list_and_show(tmp_path: Path) -> None:
@@ -285,6 +304,35 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "updated: 2, skipped: 0, failed: 0" in result.stdout
+
+
+def test_run_is_idempotent_and_does_not_repeat_llm_calls(tmp_path: Path) -> None:
+    _FakeLlmProvider.calls = 0
+    source_dir = tmp_path / "inbox"
+    write_metadata_pdf(
+        source_dir / "paper.pdf",
+        "Pipeline Paper",
+        "1 Introduction\nThis paper has enough text for the complete pipeline.",
+    )
+    config_path = tmp_path / "passagen.yaml"
+    write_offline_config(config_path)
+    data_dir = tmp_path / "data"
+    common = ["--config", str(config_path), "--data-dir", str(data_dir), "run", str(source_dir)]
+
+    first = runner.invoke(app, common)
+
+    assert first.exit_code == 0
+    assert "Imported: 1" in first.stdout
+    assert list_papers(data_dir / "passagen.db")[0].status.value == "outlined"
+    first_call_count = _FakeLlmProvider.calls
+    assert first_call_count == 3
+
+    second = runner.invoke(app, common)
+
+    assert second.exit_code == 0
+    assert "Imported: 0, skipped: 1" in second.stdout
+    assert "updated: 0, update skipped: 1" in second.stdout
+    assert _FakeLlmProvider.calls == first_call_count
 
 
 def test_update_all_isolates_paper_failure(tmp_path: Path) -> None:

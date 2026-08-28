@@ -157,7 +157,7 @@ def test_summarize_keeps_raw_response_when_repair_fails(tmp_path: Path) -> None:
     assert (call_dir / "repair-2.json").is_file()
     with connect_database(database_path) as connection:
         assert connection.execute("SELECT status FROM processing_runs").fetchone()[0] == "failed"
-        assert connection.execute("SELECT status FROM papers").fetchone()[0] == "failed"
+        assert connection.execute("SELECT status FROM papers").fetchone()[0] == "parsed"
 
 
 def test_summarize_reuses_successful_section_facts_when_forced(tmp_path: Path) -> None:
@@ -185,6 +185,56 @@ def test_summarize_reuses_successful_section_facts_when_forced(tmp_path: Path) -
     assert result.summary is not None
     assert result.summary.identity.title == "Rebuilt"
     assert len(provider.prompts) == 1
+
+
+def test_forced_summary_failure_stops_at_parsed(tmp_path: Path) -> None:
+    database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
+    summarize_paper(
+        database_path,
+        data_dir,
+        paper_id,
+        LlmSettings(),
+        SummarizationSettings(),
+        provider=FakeProvider(['{"facts": []}', valid_summary()]),
+    )
+
+    with pytest.raises(SummaryError):
+        summarize_paper(
+            database_path,
+            data_dir,
+            paper_id,
+            LlmSettings(),
+            SummarizationSettings(),
+            force=True,
+            provider=FakeProvider(["invalid", "invalid", "invalid"]),
+        )
+
+    with connect_database(database_path) as connection:
+        assert connection.execute("SELECT status FROM papers").fetchone()[0] == "parsed"
+
+
+def test_interrupted_summary_keeps_last_successful_status(tmp_path: Path) -> None:
+    database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
+
+    class InterruptingProvider(FakeProvider):
+        def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse:
+            del prompt, max_tokens
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        summarize_paper(
+            database_path,
+            data_dir,
+            paper_id,
+            LlmSettings(),
+            SummarizationSettings(),
+            provider=InterruptingProvider([]),
+        )
+
+    with connect_database(database_path) as connection:
+        assert connection.execute("SELECT status FROM papers").fetchone()[0] == "parsed"
+        run = connection.execute("SELECT status, error_message FROM processing_runs").fetchone()
+        assert tuple(run) == ("failed", "interrupted")
 
 
 def test_update_advances_parsed_paper_to_outline_when_llm_is_enabled(tmp_path: Path) -> None:
