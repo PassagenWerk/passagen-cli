@@ -18,13 +18,15 @@ class LlmResponse:
     content: str
     input_tokens: int | None = None
     output_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    finish_reason: str | None = None
 
 
 class LlmProvider(Protocol):
     provider_name: str
     model: str
 
-    def generate(self, prompt: str) -> LlmResponse: ...
+    def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse: ...
 
 
 class OpenAICompatibleProvider:
@@ -41,13 +43,16 @@ class OpenAICompatibleProvider:
                 f"LLM API key is not set; configure environment variable {settings.api_key_env}"
             )
 
-    def generate(self, prompt: str) -> LlmResponse:
+    def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse:
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
             "response_format": {"type": "json_object"},
+            "max_tokens": max_tokens,
         }
+        if "deepseek.com" in self.base_url:
+            payload["thinking"] = {"type": "disabled"}
         try:
             response = self._post(payload)
             response.raise_for_status()
@@ -62,6 +67,8 @@ class OpenAICompatibleProvider:
             content=content,
             input_tokens=_token_count(usage, "prompt_tokens"),
             output_tokens=_token_count(usage, "completion_tokens"),
+            reasoning_tokens=_reasoning_tokens(usage),
+            finish_reason=_string(body["choices"][0].get("finish_reason")),
         )
 
     def _post(self, payload: dict[str, Any]) -> httpx.Response:
@@ -79,3 +86,14 @@ def _token_count(usage: object, field: str) -> int | None:
         return None
     value = usage.get(field)
     return value if isinstance(value, int) else None
+
+
+def _reasoning_tokens(usage: object) -> int | None:
+    if not isinstance(usage, dict):
+        return None
+    details = usage.get("completion_tokens_details")
+    return _token_count(details, "reasoning_tokens")
+
+
+def _string(value: object) -> str | None:
+    return value if isinstance(value, str) else None

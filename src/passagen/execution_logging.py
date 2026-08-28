@@ -1,6 +1,6 @@
 import logging
-import os
 import shutil
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
@@ -13,10 +13,10 @@ def configure_execution_logging(*, debug: bool, logs_dir: Path = Path("logs")) -
         logger.removeHandler(handler)
         handler.close()
 
-    logs_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-%f")
-    log_path = logs_dir / f"{timestamp}.txt"
-    handler = logging.FileHandler(log_path, encoding="utf-8")
+    execution_dir = logs_dir / timestamp
+    execution_dir.mkdir(parents=True)
+    handler = logging.FileHandler(execution_dir / "log.txt", encoding="utf-8")
     handler.setFormatter(
         logging.Formatter(
             "[%(levelname)s] %(asctime)s: %(message)s",
@@ -27,17 +27,29 @@ def configure_execution_logging(*, debug: bool, logs_dir: Path = Path("logs")) -
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
     logger.propagate = False
+    return execution_dir
 
-    latest = logs_dir / "latest"
-    if latest.is_dir() and not latest.is_symlink():
-        shutil.rmtree(latest)
-    else:
-        latest.unlink(missing_ok=True)
-    try:
-        latest.symlink_to(log_path.name)
-    except OSError:
-        os.link(log_path, latest)
-    return log_path
+
+def archive_execution_logs(
+    logs_dir: Path = Path("logs"),
+    *,
+    exclude: Iterable[Path] = (),
+) -> list[tuple[Path, Path]]:
+    if not logs_dir.is_dir():
+        return []
+    archive_dir = logs_dir / "old"
+    excluded = {path.resolve() for path in exclude}
+    moved: list[tuple[Path, Path]] = []
+    for entry in sorted(logs_dir.iterdir()):
+        if entry.name == "old" or entry.resolve() in excluded:
+            continue
+        archive_dir.mkdir(exist_ok=True)
+        target = archive_dir / entry.name
+        if target.exists():
+            raise FileExistsError(f"Archived log already exists: {target}")
+        shutil.move(str(entry), target)
+        moved.append((entry, target))
+    return moved
 
 
 def set_execution_log_level(*, debug: bool) -> None:

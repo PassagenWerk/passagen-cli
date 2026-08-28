@@ -153,6 +153,7 @@ def summarize_paper(
     *,
     force: bool = False,
     provider: LlmProvider | None = None,
+    execution_log_dir: Path | None = None,
     progress: ProgressCallback | None = None,
 ) -> SummaryResult:
     paper = get_paper(database_path, paper_id)
@@ -176,12 +177,17 @@ def summarize_paper(
 
     llm = provider or OpenAICompatibleProvider(settings)
     run_id = start_processing_run(database_path, paper_id, "summarize")
-    raw_dir = data_dir / "papers" / paper_id / "summary" / "raw"
+    facts_dir = data_dir / "papers" / paper_id / "summary" / "facts"
+    call_log_dir = (
+        execution_log_dir / "external" / "llm" / paper_id if execution_log_dir is not None else None
+    )
     try:
         facts = _section_facts(
             parsed,
-            raw_dir,
+            facts_dir,
             summarization.max_chunk_characters,
+            summarization.fact_max_output_tokens,
+            call_log_dir,
             llm,
             database_path,
             run_id,
@@ -193,10 +199,18 @@ def summarize_paper(
             _summary_prompt(paper, facts),
             database_path,
             run_id,
+            call_log_dir / "summary.json" if call_log_dir is not None else None,
+            "summary",
+            summarization.summary_max_output_tokens,
         )
-        _atomic_write(raw_dir / "summary.json", raw_response.content.encode())
         summary = _validate_or_repair(
-            raw_response.content, llm, raw_dir, database_path, run_id, progress
+            raw_response.content,
+            llm,
+            database_path,
+            run_id,
+            call_log_dir,
+            summarization.summary_max_output_tokens,
+            progress,
         )
         json_path = Path("papers") / paper_id / "summary.json"
         yaml_path = Path("papers") / paper_id / "summary.yaml"
@@ -230,8 +244,10 @@ def summarize_paper(
 
 def _section_facts(
     parsed: ParsedPaper,
-    raw_dir: Path,
+    facts_dir: Path,
     max_chunk_characters: int,
+    max_output_tokens: int,
+    call_log_dir: Path | None,
     provider: LlmProvider,
     database_path: Path,
     run_id: str,
@@ -241,7 +257,7 @@ def _section_facts(
     facts: list[str] = []
     for index, chunk in enumerate(chunks, start=1):
         digest = hashlib.sha256(f"{SUMMARY_PROMPT_VERSION}\0{chunk}".encode()).hexdigest()
-        path = raw_dir / f"section-{digest}.json"
+        path = facts_dir / f"section-{digest}.json"
         if path.exists():
             try:
                 facts.append(str(json.loads(path.read_text(encoding="utf-8"))["response"]))
@@ -250,7 +266,15 @@ def _section_facts(
             except (OSError, KeyError, TypeError, ValueError):
                 pass
         report_progress(progress, f"Summarizing section facts {index}/{len(chunks)}...")
-        response = _generate(provider, _facts_prompt(chunk), database_path, run_id)
+        response = _generate(
+            provider,
+            _facts_prompt(chunk),
+            database_path,
+            run_id,
+            call_log_dir / f"facts-{index:03d}.json" if call_log_dir is not None else None,
+            f"facts {index}/{len(chunks)}",
+            max_output_tokens,
+        )
         _atomic_write(
             path,
             json.dumps(
@@ -266,9 +290,32 @@ def _generate(
     prompt: str,
     database_path: Path,
     run_id: str,
+    diagnostic_path: Path | None,
+    label: str,
+    max_tokens: int,
 ) -> LlmResponse:
+    diagnostic = {
+        "label": label,
+        "provider": provider.provider_name,
+        "model": provider.model,
+        "max_tokens": max_tokens,
+        "prompt": prompt,
+    }
+    if diagnostic_path is not None:
+        _atomic_write(
+            diagnostic_path, json.dumps(diagnostic, ensure_ascii=False, indent=2).encode()
+        )
+    logger.info(
+        "llm request: label=%s model=%s prompt_chars=%s max_tokens=%s diagnostic=%s",
+        label,
+        provider.model,
+        len(prompt),
+        max_tokens,
+        diagnostic_path or "not_saved",
+    )
+    logger.debug("llm request content: label=%s\n%s", label, prompt)
     try:
-        response = provider.generate(prompt)
+        response = provider.generate(prompt, max_tokens=max_tokens)
     except LlmProviderError as exc:
         record_llm_call(
             database_path,
@@ -281,6 +328,11 @@ def _generate(
             output_tokens=None,
             error_message=str(exc),
         )
+        diagnostic["error"] = str(exc)
+        if diagnostic_path is not None:
+            _atomic_write(
+                diagnostic_path, json.dumps(diagnostic, ensure_ascii=False, indent=2).encode()
+            )
         raise
     record_llm_call(
         database_path,
@@ -292,15 +344,41 @@ def _generate(
         input_tokens=response.input_tokens,
         output_tokens=response.output_tokens,
     )
+    diagnostic.update(
+        {
+            "response": response.content,
+            "input_tokens": response.input_tokens,
+            "output_tokens": response.output_tokens,
+            "reasoning_tokens": response.reasoning_tokens,
+            "finish_reason": response.finish_reason,
+        }
+    )
+    if diagnostic_path is not None:
+        _atomic_write(
+            diagnostic_path, json.dumps(diagnostic, ensure_ascii=False, indent=2).encode()
+        )
+    logger.info(
+        "llm response: label=%s response_chars=%s input_tokens=%s output_tokens=%s "
+        "reasoning_tokens=%s finish_reason=%s diagnostic=%s",
+        label,
+        len(response.content),
+        response.input_tokens,
+        response.output_tokens,
+        response.reasoning_tokens,
+        response.finish_reason,
+        diagnostic_path or "not_saved",
+    )
+    logger.debug("llm response content: label=%s\n%s", label, response.content)
     return response
 
 
 def _validate_or_repair(
     raw: str,
     provider: LlmProvider,
-    raw_dir: Path,
     database_path: Path,
     run_id: str,
+    call_log_dir: Path | None,
+    max_output_tokens: int,
     progress: ProgressCallback | None,
 ) -> StructuredSummary:
     current = raw
@@ -312,9 +390,14 @@ def _validate_or_repair(
                 raise SummaryError(f"Summary failed schema validation: {exc}") from exc
             report_progress(progress, f"Repairing invalid summary ({attempt + 1}/2)...")
             current = _generate(
-                provider, _repair_prompt(current, str(exc)), database_path, run_id
+                provider,
+                _repair_prompt(current, str(exc)),
+                database_path,
+                run_id,
+                call_log_dir / f"repair-{attempt + 1}.json" if call_log_dir is not None else None,
+                f"repair {attempt + 1}/2",
+                max_output_tokens,
             ).content
-            _atomic_write(raw_dir / f"summary-repair-{attempt + 1}.json", current.encode())
     raise AssertionError("unreachable")
 
 
@@ -353,8 +436,11 @@ def _chunks(sections: tuple[ParsedSection, ...], limit: int) -> list[str]:
 
 def _facts_prompt(chunk: str) -> str:
     return (
-        "Extract factual notes from this paper section. Do not infer missing facts. "
-        "Return a JSON object with a single `facts` array of concise English strings.\n\n" + chunk
+        "Extract only the facts needed to build a structured paper summary. "
+        "Do not restate every sentence or infer missing facts. Deduplicate related facts. "
+        "Return JSON with one `facts` array containing at most 30 concise English strings; "
+        "each string must be at most 25 words and include source page numbers when available.\n\n"
+        + chunk
     )
 
 

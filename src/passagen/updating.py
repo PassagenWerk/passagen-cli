@@ -50,6 +50,7 @@ def update_papers(
     paper_id: str | None = None,
     *,
     summary_provider: LlmProvider | None = None,
+    execution_log_dir: Path | None = None,
     force: bool = False,
     progress: ProgressCallback | None = None,
 ) -> UpdateResult:
@@ -196,6 +197,7 @@ def update_papers(
                     paper.id,
                     providers.llm,
                     pipeline.summarization,
+                    execution_log_dir=execution_log_dir,
                     force=force,
                     provider=summary_provider,
                     progress=partial(

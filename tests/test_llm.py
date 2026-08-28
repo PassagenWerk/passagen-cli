@@ -15,6 +15,7 @@ def test_openai_compatible_provider_sends_json_request(monkeypatch: pytest.Monke
         assert request.headers["authorization"] == "Bearer test-key"
         payload = json.loads(request.content)
         assert payload["response_format"] == {"type": "json_object"}
+        assert payload["max_tokens"] == 1000
         assert payload["messages"] == [{"role": "user", "content": "summarize"}]
         return httpx.Response(
             200,
@@ -27,7 +28,7 @@ def test_openai_compatible_provider_sends_json_request(monkeypatch: pytest.Monke
     client = httpx.Client(transport=httpx.MockTransport(respond))
     provider = OpenAICompatibleProvider(LlmSettings(base_url="https://llm.test/v1"), client=client)
 
-    response = provider.generate("summarize")
+    response = provider.generate("summarize", max_tokens=1000)
 
     assert response.content == "{}"
     assert response.input_tokens == 4
@@ -39,3 +40,32 @@ def test_openai_compatible_provider_requires_api_key(monkeypatch: pytest.MonkeyP
 
     with pytest.raises(LlmProviderError, match="PASSAGEN_API_KEY"):
         OpenAICompatibleProvider(LlmSettings())
+
+
+def test_deepseek_provider_disables_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PASSAGEN_API_KEY", "test-key")
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["thinking"] == {"type": "disabled"}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+                "usage": {
+                    "prompt_tokens": 4,
+                    "completion_tokens": 2,
+                    "completion_tokens_details": {"reasoning_tokens": 0},
+                },
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(respond))
+    provider = OpenAICompatibleProvider(
+        LlmSettings(base_url="https://api.deepseek.com"), client=client
+    )
+
+    response = provider.generate("summarize", max_tokens=1000)
+
+    assert response.reasoning_tokens == 0
+    assert response.finish_reason == "stop"

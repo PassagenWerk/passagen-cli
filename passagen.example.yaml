@@ -32,3 +32,5 @@ pipeline:
     min_text_characters: 10
   summarization:
     max_chunk_characters: 48000
+    fact_max_output_tokens: 1500
+    summary_max_output_tokens: 3000

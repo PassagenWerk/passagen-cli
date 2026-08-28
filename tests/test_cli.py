@@ -28,8 +28,9 @@ class _FakeLlmProvider:
     provider_name = "fake"
     model = "test-model"
 
-    def generate(self, prompt: str) -> LlmResponse:
-        if "Extract factual notes" in prompt:
+    def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse:
+        del max_tokens
+        if "Extract only the facts" in prompt:
             return LlmResponse('{"facts": []}')
         return LlmResponse('{"identity": {"title": "Test", "authors": [], "tags": []}}')
 
@@ -57,6 +58,12 @@ pipeline:
     parser: pymupdf
 """
     )
+
+
+def latest_execution_log(root: Path) -> str:
+    log_paths = sorted((root / "logs").glob("*/log.txt"))
+    assert log_paths
+    return log_paths[-1].read_text(encoding="utf-8")
 
 
 def test_help() -> None:
@@ -230,7 +237,7 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
     assert "Paper 1/1 [stage 2/3: full text]" in result.stdout
     assert "Paper 1/1 [stage 3/3: summary]" in result.stdout
     assert "updated: 1, skipped: 0, failed: 0" in result.stdout
-    update_log = (tmp_path / "logs" / "latest").read_text(encoding="utf-8")
+    update_log = latest_execution_log(tmp_path)
     assert "update stage started:" in update_log
     assert "stage=metadata" in update_log
     assert "stage=full_text" in update_log
@@ -318,7 +325,7 @@ def test_scan_and_metadata_write_detailed_execution_logs(
     assert "Discovering PDFs" in result.stdout
     assert "Importing PDF 1/1: paper.pdf" in result.stdout
     assert "Scan complete: 1 imported, 0 skipped, 0 failed." in result.stdout
-    scan_log = (tmp_path / "logs" / "latest").read_text(encoding="utf-8")
+    scan_log = latest_execution_log(tmp_path)
     assert "execution started: command=scan" in scan_log
     assert f"scan candidate: file={source_dir / 'paper.pdf'}" in scan_log
     assert "scan imported:" in scan_log
@@ -331,11 +338,11 @@ def test_scan_and_metadata_write_detailed_execution_logs(
     assert "Reading local PDF metadata: paper.pdf" in result.stdout
     assert "Saving resolved metadata" in result.stdout
     assert "Metadata saved." in result.stdout
-    metadata_log = (tmp_path / "logs" / "latest").read_text(encoding="utf-8")
+    metadata_log = latest_execution_log(tmp_path)
     assert "execution started: command=metadata" in metadata_log
     assert f"metadata started: paper_id={paper.id}" in metadata_log
     assert "metadata local extraction succeeded:" in metadata_log
     assert "metadata route skipped: provider=Crossref reason=disabled" in metadata_log
     assert "metadata route skipped: provider=arXiv reason=disabled" in metadata_log
     assert "metadata finished:" in metadata_log
-    assert len(list((tmp_path / "logs").glob("*.txt"))) == 2
+    assert len(list((tmp_path / "logs").glob("*/log.txt"))) == 2

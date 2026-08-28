@@ -61,7 +61,7 @@ passagen show <paper-id>        # 查看元数据和产物路径
 
 ## 执行日志
 
-每次 CLI 执行在当前工作目录的 `logs/` 下创建一个带本地日期时间和微秒的文本日志，例如 `logs/20260827-153012-123456.txt`。`logs/latest` 是指向本次日志的相对符号链接；不额外复制日志内容，符号链接不可用的平台退化为指向同一 inode 的硬链接。`logs/` 不受 Git 跟踪。
+每次 CLI 执行在当前工作目录的 `logs/` 下创建一个带本地日期时间和微秒的目录，例如 `logs/20260827-153012-123456/`。主日志写入 `log.txt`，外部 LLM 请求与响应按 provider 和 Paper 分类写入 `external/llm/<paper-id>/`。生成产物和可复用中间摘要仍保存在 `data/`，外部调用诊断只保存在 `logs/`。不创建 `logs/latest`。`passagen logs clean` 或 `uv run python scripts/clean_logs.py` 将历史执行目录归档到 `logs/old/`。
 
 日志至少覆盖：命令与运行配置路径、扫描目录和逐个 PDF 候选、导入或 SHA-256 重复结果、metadata 本地提取、DOI/Crossref 与 arXiv 路由、GROBID fallback 原因和结果、标识纠正与冲突拒绝、最终字段来源、update 的选择/跳过/成功/失败汇总。外部服务错误作为 warning 记录，业务失败作为 error 记录；日志不输出 API key 或完整配置文件内容。
 
@@ -325,6 +325,8 @@ pipeline:
     min_text_characters: 10
   summarization:
     max_chunk_characters: 12000
+    fact_max_output_tokens: 1500
+    summary_max_output_tokens: 3000
 ```
 
 执行需要 GROBID 的 metadata fallback 或 `auto`/`grobid` 解析前，Passagen 会检查服务健康状态。执行摘要前会检查 LLM API key 配置；不执行对应阶段时不检查这些依赖。缺少必需依赖时该阶段以明确错误失败。

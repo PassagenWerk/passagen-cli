@@ -24,7 +24,8 @@ class FakeProvider:
         self.responses = responses
         self.prompts: list[str] = []
 
-    def generate(self, prompt: str) -> LlmResponse:
+    def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse:
+        del max_tokens
         self.prompts.append(prompt)
         return LlmResponse(self.responses.pop(0), input_tokens=10, output_tokens=5)
 
@@ -65,7 +66,13 @@ def test_summarize_saves_validated_json_yaml_and_call_audit(tmp_path: Path) -> N
     provider = FakeProvider(['{"facts": ["A test paper"]}', valid_summary()])
 
     result = summarize_paper(
-        database_path, data_dir, paper_id, LlmSettings(), SummarizationSettings(), provider=provider
+        database_path,
+        data_dir,
+        paper_id,
+        LlmSettings(),
+        SummarizationSettings(),
+        provider=provider,
+        execution_log_dir=tmp_path / "logs" / "run",
     )
 
     assert result.updated is True
@@ -74,6 +81,11 @@ def test_summarize_saves_validated_json_yaml_and_call_audit(tmp_path: Path) -> N
     assert result.summary.identity.title == "Test Paper"
     assert (data_dir / "papers" / paper_id / "summary.json").is_file()
     assert (data_dir / "papers" / paper_id / "summary.yaml").is_file()
+    call_dir = tmp_path / "logs" / "run" / "external" / "llm" / paper_id
+    fact_call = json.loads((call_dir / "facts-001.json").read_text(encoding="utf-8"))
+    assert fact_call["prompt"]
+    assert fact_call["response"] == '{"facts": ["A test paper"]}'
+    assert fact_call["max_tokens"] == 1500
     with connect_database(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0] == 2
         assert connection.execute("SELECT status FROM processing_runs").fetchone()[0] == "completed"
@@ -96,12 +108,18 @@ def test_summarize_uses_llm_repair_for_schema_error(tmp_path: Path) -> None:
     provider = FakeProvider(['{"facts": []}', '{"identity": {"title": 1}}', valid_summary()])
 
     result = summarize_paper(
-        database_path, data_dir, paper_id, LlmSettings(), SummarizationSettings(), provider=provider
+        database_path,
+        data_dir,
+        paper_id,
+        LlmSettings(),
+        SummarizationSettings(),
+        provider=provider,
+        execution_log_dir=tmp_path / "logs" / "run",
     )
 
     assert result.updated is True
     assert len(provider.prompts) == 3
-    assert (data_dir / "papers" / paper_id / "summary" / "raw" / "summary-repair-1.json").is_file()
+    assert (tmp_path / "logs" / "run" / "external" / "llm" / paper_id / "repair-1.json").is_file()
 
 
 def test_summarize_keeps_raw_response_when_repair_fails(tmp_path: Path) -> None:
@@ -116,11 +134,14 @@ def test_summarize_keeps_raw_response_when_repair_fails(tmp_path: Path) -> None:
             LlmSettings(),
             SummarizationSettings(),
             provider=provider,
+            execution_log_dir=tmp_path / "logs" / "run",
         )
 
-    raw_dir = data_dir / "papers" / paper_id / "summary" / "raw"
-    assert (raw_dir / "summary.json").read_text(encoding="utf-8") == "not json"
-    assert (raw_dir / "summary-repair-2.json").is_file()
+    call_dir = tmp_path / "logs" / "run" / "external" / "llm" / paper_id
+    assert json.loads((call_dir / "summary.json").read_text(encoding="utf-8"))["response"] == (
+        "not json"
+    )
+    assert (call_dir / "repair-2.json").is_file()
     with connect_database(database_path) as connection:
         assert connection.execute("SELECT status FROM processing_runs").fetchone()[0] == "failed"
         assert connection.execute("SELECT status FROM papers").fetchone()[0] == "failed"

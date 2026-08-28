@@ -80,6 +80,8 @@ class SummarizationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_chunk_characters: int = Field(default=12_000, ge=1_000)
+    fact_max_output_tokens: int = Field(default=1_500, ge=100)
+    summary_max_output_tokens: int = Field(default=3_000, ge=100)
 
 
 class PipelineSettings(BaseModel):

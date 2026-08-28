@@ -12,7 +12,11 @@ from rich.table import Table
 from passagen import __version__
 from passagen.config import ConfigError, ParserBackend, Settings, load_settings
 from passagen.db import current_version, initialize_database
-from passagen.execution_logging import configure_execution_logging, set_execution_log_level
+from passagen.execution_logging import (
+    archive_execution_logs,
+    configure_execution_logging,
+    set_execution_log_level,
+)
 from passagen.metadata_service import MetadataResolutionError, resolve_paper_metadata
 from passagen.models import PaperStatus
 from passagen.parsing_service import PaperParsingError, parse_paper
@@ -30,16 +34,18 @@ from passagen.updating import UpdateTargetError, update_papers
 app = typer.Typer(help="Manage paper PDFs and generate structured summaries.")
 config_app = typer.Typer(help="Inspect Passagen configuration.")
 db_app = typer.Typer(help="Manage the Passagen database.")
+logs_app = typer.Typer(help="Manage Passagen execution logs.")
 app.add_typer(config_app, name="config")
 app.add_typer(db_app, name="db")
+app.add_typer(logs_app, name="logs")
 console = Console()
 logger = logging.getLogger(__name__)
 
 
 class AppState:
-    def __init__(self, settings: Settings, log_path: Path) -> None:
+    def __init__(self, settings: Settings, execution_log_dir: Path) -> None:
         self.settings = settings
-        self.log_path = log_path
+        self.execution_log_dir = execution_log_dir
 
 
 class ConsoleProgress:
@@ -85,9 +91,9 @@ def main(
     ] = None,
 ) -> None:
     del version
-    log_path = configure_execution_logging(debug=bool(debug))
+    execution_log_dir = configure_execution_logging(debug=bool(debug))
     command = ctx.invoked_subcommand or "passagen"
-    logger.info("execution started: command=%s log=%s", command, log_path)
+    logger.info("execution started: command=%s log=%s", command, execution_log_dir / "log.txt")
     try:
         settings = load_settings(config, {"data_dir": data_dir, "debug": debug})
     except ConfigError as exc:
@@ -102,7 +108,7 @@ def main(
         settings.debug,
     )
     ctx.call_on_close(lambda: logger.info("execution finished: command=%s", command))
-    ctx.obj = AppState(settings, log_path)
+    ctx.obj = AppState(settings, execution_log_dir)
 
 
 @config_app.command("check")
@@ -141,6 +147,13 @@ def db_status(ctx: typer.Context) -> None:
         raise typer.Exit(code=1)
     logger.info("database status: path=%s schema_version=%s", database_path, version)
     console.print(f"Database schema version: {version}")
+
+
+@logs_app.command("clean")
+def logs_clean(ctx: typer.Context) -> None:
+    state = _state(ctx)
+    moved = archive_execution_logs(exclude=(state.execution_log_dir,))
+    console.print(f"Archived {len(moved)} execution log(s) to logs/old.")
 
 
 @app.command("scan")
@@ -261,6 +274,7 @@ def update_command(
                 settings.providers,
                 settings.pipeline,
                 paper_id,
+                execution_log_dir=_state(ctx).execution_log_dir,
                 force=force,
                 progress=progress.update,
             )
@@ -349,6 +363,7 @@ def summarize_command(
                 paper_id,
                 settings.providers.llm,
                 settings.pipeline.summarization,
+                execution_log_dir=_state(ctx).execution_log_dir,
                 force=force,
                 progress=progress.update,
             )
