@@ -54,7 +54,7 @@ Settings + command input
   -> ParsedPaper artifact
   -> section fact artifacts
   -> validated StructuredSummary artifact
-  -> Chinese outline artifact
+  -> English outline artifact
   -> outlined Paper
 ```
 
@@ -73,7 +73,7 @@ Settings + command input
 | `parsing/` | `PaperParser` contract、GROBID/PyMuPDF adapter、统一 ParsedPaper | metadata 查询、summary 生成 |
 | `metadata/` | 轻量 PDF 标识提取、GROBID/Crossref/arXiv adapter、字段来源合并 | 全文结构解析、pipeline 编排 |
 | `summarization/` | summary Schema、分块、prompt、校验和有限修复 | CLI、数据库 migration |
-| `outlining/` | 从合法 summary 生成中文 outline | 直接读取和总结 PDF |
+| `outlining/` | 从合法 summary 生成英文 outline | 直接读取和总结 PDF |
 | `providers/` | LLM provider contract 和供应商 adapter | summary 领域决策 |
 | `pipeline/` | stage 顺序、输入输出检查、恢复与运行记录 | parser 算法、SQL 细节、prompt 内容 |
 | `utils/` | 无业务语义的文件或日志小工具 | Paper、summary、metadata 规则 |

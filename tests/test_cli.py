@@ -48,14 +48,13 @@ class _FakeLlmProvider:
     def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse:
         del max_tokens
         type(self).calls += 1
-        if "Extract only the facts" in prompt:
+        if "Extract evidence-backed facts" in prompt:
             return LlmResponse('{"facts": []}')
-        if "Generate a concise Chinese outline" in prompt:
+        if "Create a detailed English technical-paper outline" in prompt:
             return LlmResponse(
-                '{"introduction":["本文介绍测试论文。"],"background":[],'
-                '"design":[],"implementation":[],"evaluation":[],"related_work":[]}'
+                '{"introduction":{"thesis":"The paper introduces a test problem.","points":[]}}'
             )
-        return LlmResponse('{"identity": {"title": "Test", "authors": [], "tags": []}}')
+        return LlmResponse('{"identity": {"title": "Test", "authors": []}}')
 
 
 def write_metadata_pdf(path: Path, title: str, text: str = "Paper body") -> None:
@@ -105,6 +104,19 @@ def test_database_init_uses_current_directory_by_default(
 
     assert result.exit_code == 0
     assert (tmp_path / "data" / "passagen.db").exists()
+
+
+def test_config_check_rejects_invalid_prompt_template(tmp_path: Path) -> None:
+    prompt = tmp_path / "facts.prompt"
+    prompt.write_text("Unknown placeholder: $unknown\n")
+    config = tmp_path / "passagen.yaml"
+    config.write_text(f"pipeline:\n  summarization:\n    facts_prompt_path: {prompt}\n")
+
+    result = runner.invoke(app, ["--config", str(config), "config", "check"])
+
+    assert result.exit_code == 2
+    assert "Prompt configuration error" in result.stdout
+    assert "unknown placeholders" in result.stdout
 
 
 def test_database_init_and_status(tmp_path: Path) -> None:

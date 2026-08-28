@@ -84,12 +84,16 @@ class SummarizationSettings(BaseModel):
     max_chunk_characters: int = Field(default=12_000, ge=1_000)
     fact_max_output_tokens: int = Field(default=1_500, ge=100)
     summary_max_output_tokens: int = Field(default=3_000, ge=100)
+    facts_prompt_path: Path | None = None
+    summary_prompt_path: Path | None = None
+    repair_prompt_path: Path | None = None
 
 
 class OutliningSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    max_output_tokens: int = Field(default=2_000, ge=100)
+    max_output_tokens: int = Field(default=4_000, ge=100)
+    prompt_path: Path | None = None
 
 
 class PipelineSettings(BaseModel):

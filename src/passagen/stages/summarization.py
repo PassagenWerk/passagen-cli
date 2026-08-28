@@ -16,6 +16,11 @@ from passagen.config import LlmSettings, SummarizationSettings
 from passagen.llm import LlmProvider, LlmProviderError, LlmResponse, OpenAICompatibleProvider
 from passagen.models import PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
+from passagen.prompting import (
+    PromptTemplate,
+    PromptTemplateError,
+    load_summary_prompt_templates,
+)
 from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
 from passagen.repository import (
     ArtifactRecord,
@@ -31,8 +36,8 @@ from passagen.repository import (
 from passagen.stages.progress import ProgressCallback, report_progress
 
 logger = logging.getLogger(__name__)
-SUMMARY_SCHEMA_VERSION = "1"
-SUMMARY_PROMPT_VERSION = "1"
+SUMMARY_SCHEMA_VERSION = "2"
+SUMMARY_PROMPT_VERSION = "2"
 EXTRACTED_ARTIFACT_KIND = "extracted_json"
 SUMMARY_ARTIFACT_KIND = "summary_json"
 
@@ -41,100 +46,225 @@ class SummaryError(RuntimeError):
     pass
 
 
+class ExtractedFacts(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    facts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Evidence-backed English facts with source page numbers when known; preserve metric "
+            "ownership, comparison direction, units, and conditions."
+        ),
+    )
+
+
 class SummaryIdentity(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str
     authors: list[str] = Field(default_factory=list)
-    tags: list[str] = Field(default_factory=list)
     year: int | None = None
     venue: str | None = None
     doi: str | None = None
     arxiv_id: str | None = None
 
 
+class PaperClassification(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    paper_type: str | None = Field(
+        default=None,
+        description=(
+            "General paper type, such as system, architecture, compiler, algorithm, "
+            "measurement, or empirical study."
+        ),
+    )
+    topics: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+
+
 class SummaryProblem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    problem_statement: str | None = None
-    motivation: str | None = None
-    limitations_of_prior_work: list[str] = Field(default_factory=list)
+    context: str | None = Field(
+        default=None, description="Technical context needed to understand the problem."
+    )
+    problem_statement: str | None = Field(
+        default=None, description="The specific research problem addressed by the paper."
+    )
+    motivation: str | None = Field(
+        default=None, description="Why solving the stated problem matters."
+    )
+    goals: list[str] = Field(default_factory=list)
+    non_goals: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    prior_work_limitations: list[str] = Field(
+        default_factory=list,
+        description="Concrete limitations of prior approaches stated by the paper.",
+    )
 
 
-class SummaryApproach(BaseModel):
+class Contribution(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    core_idea: str | None = None
-    architecture: str | None = None
-    algorithm: str | None = None
-    novelty: list[str] = Field(default_factory=list)
+    category: str | None = Field(
+        default=None,
+        description=(
+            "Contribution category, such as design, mechanism, implementation, analysis, "
+            "benchmark, measurement, or methodology."
+        ),
+    )
+    statement: str
+    evidence_pages: list[int] = Field(default_factory=list)
 
 
-class SummarySystem(BaseModel):
+class DesignComponent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    hardware: list[str] = Field(default_factory=list)
-    software: list[str] = Field(default_factory=list)
+    name: str
+    role: str | None = None
+    details: list[str] = Field(default_factory=list)
+    interactions: list[str] = Field(default_factory=list)
+    evidence_pages: list[int] = Field(default_factory=list)
+
+
+class DesignProcess(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    description: str | None = None
+    steps: list[str] = Field(default_factory=list)
+    evidence_pages: list[int] = Field(default_factory=list)
+
+
+class SummaryDesign(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    overview: str | None = Field(
+        default=None, description="High-level design and how it addresses the stated problem."
+    )
+    components: list[DesignComponent] = Field(default_factory=list)
+    processes: list[DesignProcess] = Field(default_factory=list)
+    key_mechanisms: list[str] = Field(default_factory=list)
+    design_decisions: list[str] = Field(default_factory=list)
+    tradeoffs: list[str] = Field(default_factory=list)
 
 
 class SummaryImplementation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    tools_and_dependencies: list[str] = Field(default_factory=list)
+    prototype_scope: str | None = None
+    implemented_components: list[str] = Field(default_factory=list)
+    languages: list[str] = Field(default_factory=list)
+    frameworks_and_dependencies: list[str] = Field(
+        default_factory=list,
+        description="Frameworks, libraries, toolchains, and external dependencies.",
+    )
+    hardware_platforms: list[str] = Field(default_factory=list)
+    software_platforms: list[str] = Field(default_factory=list)
+    code_size: str | None = None
+    deployment_model: str | None = None
+    engineering_details: list[str] = Field(default_factory=list)
 
 
-class SummaryKeyResult(BaseModel):
+class EvaluationEnvironment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    claim: str
-    value: str | None = None
+    hardware: list[str] = Field(default_factory=list)
+    software: list[str] = Field(default_factory=list)
+    topology_or_scale: str | None = None
+    configuration: list[str] = Field(default_factory=list)
+
+
+class EvaluationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    research_question: str | None = None
+    metric: str
+    metric_direction: Literal["higher_is_better", "lower_is_better", "neutral", "unknown"] = (
+        "unknown"
+    )
+    subject: str
+    subject_value: str | None = Field(
+        default=None, description="Measured value belonging to the evaluated subject."
+    )
     baseline: str | None = None
-    evidence_pages: list[int] = Field(min_length=1)
+    baseline_value: str | None = Field(
+        default=None, description="Measured value belonging to the named baseline."
+    )
+    improvement: str | None = None
+    conditions: list[str] = Field(default_factory=list)
+    evidence_pages: list[int] = Field(
+        min_length=1, description="Source pages supporting the complete result."
+    )
 
 
 class SummaryEvaluation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    key_results: list[SummaryKeyResult] = Field(default_factory=list)
-    datasets: list[str] = Field(default_factory=list)
-    workloads: list[str] = Field(default_factory=list)
+    research_questions: list[str] = Field(default_factory=list)
+    environment: EvaluationEnvironment = Field(default_factory=EvaluationEnvironment)
+    baselines: list[str] = Field(default_factory=list)
+    datasets: list[str] = Field(
+        default_factory=list, description="Datasets used in the evaluation."
+    )
+    workloads: list[str] = Field(
+        default_factory=list, description="Benchmarks, applications, or workloads evaluated."
+    )
+    metrics: list[str] = Field(default_factory=list)
+    methodology: list[str] = Field(default_factory=list)
+    results: list[EvaluationResult] = Field(default_factory=list)
+    ablations: list[EvaluationResult] = Field(default_factory=list)
 
 
-class SummaryConclusion(BaseModel):
+class SummaryDiscussion(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    limitations: list[str] = Field(default_factory=list)
-    useful_conclusions: list[str] = Field(default_factory=list)
-    reusable_evaluation_methods: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(
+        default_factory=list, description="Limitations and trade-offs acknowledged by the paper."
+    )
+    tradeoffs: list[str] = Field(default_factory=list)
+    threats_to_validity: list[str] = Field(default_factory=list)
+    applicability: list[str] = Field(default_factory=list)
+    future_work: list[str] = Field(default_factory=list)
+    conclusions: list[str] = Field(
+        default_factory=list, description="Conclusions directly supported by the paper."
+    )
+    reusable_methods: list[str] = Field(
+        default_factory=list,
+        description="Methods that could be reused in related research.",
+    )
+
+
+class RelatedWorkGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    area: str
+    representative_works: list[str] = Field(default_factory=list)
+    relationship: str | None = None
+    distinction: str | None = None
+    evidence_pages: list[int] = Field(default_factory=list)
 
 
 class SummaryRelatedWork(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: str
-    relationship: str | None = None
-
-
-class SummaryResearchConnections(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    related_works: list[SummaryRelatedWork] = Field(default_factory=list)
+    groups: list[RelatedWorkGroup] = Field(default_factory=list)
 
 
 class StructuredSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1"] = SUMMARY_SCHEMA_VERSION
+    schema_version: Literal["2"] = SUMMARY_SCHEMA_VERSION
     identity: SummaryIdentity
+    classification: PaperClassification = Field(default_factory=PaperClassification)
     problem: SummaryProblem = Field(default_factory=SummaryProblem)
-    approach: SummaryApproach = Field(default_factory=SummaryApproach)
-    system: SummarySystem = Field(default_factory=SummarySystem)
+    contributions: list[Contribution] = Field(default_factory=list)
+    design: SummaryDesign = Field(default_factory=SummaryDesign)
     implementation: SummaryImplementation = Field(default_factory=SummaryImplementation)
     evaluation: SummaryEvaluation = Field(default_factory=SummaryEvaluation)
-    conclusion: SummaryConclusion = Field(default_factory=SummaryConclusion)
-    research_connections: SummaryResearchConnections = Field(
-        default_factory=SummaryResearchConnections
-    )
+    discussion: SummaryDiscussion = Field(default_factory=SummaryDiscussion)
+    related_work: SummaryRelatedWork = Field(default_factory=SummaryRelatedWork)
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +306,15 @@ def summarize_paper(
     if force and paper.status is not PaperStatus.PARSED:
         update_paper_status(database_path, paper_id, PaperStatus.PARSED)
 
+    try:
+        prompts = load_summary_prompt_templates(
+            summarization.facts_prompt_path,
+            summarization.summary_prompt_path,
+            summarization.repair_prompt_path,
+        )
+    except PromptTemplateError as exc:
+        raise SummaryError(str(exc)) from exc
+
     if provider_health is not None:
         try:
             provider_health.require("llm")
@@ -198,11 +337,12 @@ def summarize_paper(
             database_path,
             run_id,
             progress,
+            prompts.facts,
         )
         report_progress(progress, "Generating structured summary...")
         raw_response = _generate(
             llm,
-            _summary_prompt(paper, facts),
+            _summary_prompt(prompts.summary, paper, facts),
             database_path,
             run_id,
             call_log_dir / "summary.json" if call_log_dir is not None else None,
@@ -217,7 +357,9 @@ def summarize_paper(
             call_log_dir,
             summarization.summary_max_output_tokens,
             progress,
+            prompts.repair,
         )
+        summary = summary.model_copy(update={"identity": _summary_identity(paper)})
         json_path = Path("papers") / paper_id / "summary.json"
         yaml_path = Path("papers") / paper_id / "summary.yaml"
         json_content = (summary.model_dump_json(indent=2) + "\n").encode()
@@ -260,36 +402,46 @@ def _section_facts(
     database_path: Path,
     run_id: str,
     progress: ProgressCallback | None,
+    prompt_template: PromptTemplate,
 ) -> list[str]:
     chunks = _chunks(parsed.sections, max_chunk_characters)
     facts: list[str] = []
     for index, chunk in enumerate(chunks, start=1):
-        digest = hashlib.sha256(f"{SUMMARY_PROMPT_VERSION}\0{chunk}".encode()).hexdigest()
+        digest = hashlib.sha256(f"{prompt_template.sha256}\0{chunk}".encode()).hexdigest()
         path = facts_dir / f"section-{digest}.json"
         if path.exists():
             try:
-                facts.append(str(json.loads(path.read_text(encoding="utf-8"))["response"]))
+                cached = str(json.loads(path.read_text(encoding="utf-8"))["response"])
+                facts.append(ExtractedFacts.model_validate_json(cached).model_dump_json())
                 report_progress(progress, f"Reusing section facts {index}/{len(chunks)}.")
                 continue
-            except (OSError, KeyError, TypeError, ValueError):
+            except (OSError, KeyError, TypeError, ValueError, ValidationError):
                 pass
         report_progress(progress, f"Summarizing section facts {index}/{len(chunks)}...")
         response = _generate(
             provider,
-            _facts_prompt(chunk),
+            _facts_prompt(prompt_template, chunk),
             database_path,
             run_id,
             call_log_dir / f"facts-{index:03d}.json" if call_log_dir is not None else None,
             f"facts {index}/{len(chunks)}",
             max_output_tokens,
         )
+        try:
+            validated = ExtractedFacts.model_validate_json(response.content).model_dump_json()
+        except ValidationError as exc:
+            raise SummaryError(f"Extracted facts failed schema validation: {exc}") from exc
         _atomic_write(
             path,
             json.dumps(
-                {"prompt_version": SUMMARY_PROMPT_VERSION, "response": response.content}
+                {
+                    "prompt_version": SUMMARY_PROMPT_VERSION,
+                    "prompt_sha256": prompt_template.sha256,
+                    "response": validated,
+                }
             ).encode(),
         )
-        facts.append(response.content)
+        facts.append(validated)
     return facts
 
 
@@ -308,6 +460,7 @@ def _generate(
         "model": provider.model,
         "max_tokens": max_tokens,
         "prompt": prompt,
+        "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
     }
     if diagnostic_path is not None:
         _atomic_write(
@@ -388,6 +541,7 @@ def _validate_or_repair(
     call_log_dir: Path | None,
     max_output_tokens: int,
     progress: ProgressCallback | None,
+    repair_template: PromptTemplate,
 ) -> StructuredSummary:
     current = raw
     for attempt in range(3):
@@ -399,7 +553,7 @@ def _validate_or_repair(
             report_progress(progress, f"Repairing invalid summary ({attempt + 1}/2)...")
             current = _generate(
                 provider,
-                _repair_prompt(current, str(exc)),
+                _repair_prompt(repair_template, current, str(exc)),
                 database_path,
                 run_id,
                 call_log_dir / f"repair-{attempt + 1}.json" if call_log_dir is not None else None,
@@ -442,36 +596,49 @@ def _chunks(sections: tuple[ParsedSection, ...], limit: int) -> list[str]:
     return chunks
 
 
-def _facts_prompt(chunk: str) -> str:
-    return (
-        "Extract only the facts needed to build a structured paper summary. "
-        "Do not restate every sentence or infer missing facts. Deduplicate related facts. "
-        "Return JSON with one `facts` array containing at most 30 concise English strings; "
-        "each string must be at most 25 words and include source page numbers when available.\n\n"
-        + chunk
+def _facts_prompt(template: PromptTemplate, chunk: str) -> str:
+    return template.render(
+        schema=json.dumps(ExtractedFacts.model_json_schema(), ensure_ascii=False),
+        chunk=chunk,
     )
 
 
-def _summary_prompt(paper: PaperRecord, facts: list[str]) -> str:
-    return (
-        "Create an English structured paper summary from the section facts below. "
-        "Return JSON only. Do not invent facts. Use null or empty lists when unsupported. "
-        "Every evaluation.key_results item must include evidence_pages from the supplied facts. "
-        f"The paper identity is title={paper.title!r}, authors={list(paper.authors)!r}, "
-        f"year={paper.year!r}, venue={paper.venue!r}, doi={paper.doi!r}, "
-        f"arxiv_id={paper.arxiv_id!r}. "
-        "The JSON must validate against this schema: "
-        f"{json.dumps(StructuredSummary.model_json_schema())}\n\n"
-        f"Section facts:\n{json.dumps(facts)}"
+def _summary_prompt(
+    template: PromptTemplate,
+    paper: PaperRecord,
+    facts: list[str],
+) -> str:
+    identity = {
+        "title": paper.title,
+        "authors": list(paper.authors),
+        "year": paper.year,
+        "venue": paper.venue,
+        "doi": paper.doi,
+        "arxiv_id": paper.arxiv_id,
+    }
+    return template.render(
+        schema=json.dumps(StructuredSummary.model_json_schema(), ensure_ascii=False),
+        identity=json.dumps(identity, ensure_ascii=False),
+        facts=json.dumps([json.loads(fact) for fact in facts], ensure_ascii=False),
     )
 
 
-def _repair_prompt(raw: str, error: str) -> str:
-    return (
-        "Repair the following candidate into JSON that validates against the supplied schema. "
-        "Return JSON only. Preserve facts; do not add unsupported information. "
-        f"Schema: {json.dumps(StructuredSummary.model_json_schema())}\n"
-        f"Validation error: {error}\nCandidate: {raw}"
+def _summary_identity(paper: PaperRecord) -> SummaryIdentity:
+    return SummaryIdentity(
+        title=paper.title or paper.original_filename,
+        authors=list(paper.authors),
+        year=paper.year,
+        venue=paper.venue,
+        doi=paper.doi,
+        arxiv_id=paper.arxiv_id,
+    )
+
+
+def _repair_prompt(template: PromptTemplate, raw: str, error: str) -> str:
+    return template.render(
+        schema=json.dumps(StructuredSummary.model_json_schema(), ensure_ascii=False),
+        validation_error=error,
+        candidate=raw,
     )
 
 

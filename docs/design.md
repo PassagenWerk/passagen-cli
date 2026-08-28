@@ -1,6 +1,6 @@
 # Passagen 设计方案
 
-Passagen 是一个通过 CLI 整理 paper PDF，并调用 LLM 生成结构化英文摘要和中文 outline 的单机工具。
+Passagen 是一个通过 CLI 整理 paper PDF，并调用 LLM 生成结构化英文摘要和英文 outline 的单机工具。
 
 ## 设计目标
 
@@ -8,7 +8,7 @@ Passagen 是一个通过 CLI 整理 paper PDF，并调用 LLM 生成结构化英
 - 导入 PDF 后立即建立受 Passagen 管理的副本，后续处理不依赖源文件。
 - 提取并补全论文元数据，统一管理 PDF 和生成产物。
 - 生成经过 Schema 校验的英文结构化摘要。
-- 仅以结构化摘要为输入生成中文 outline，避免两份结果相互矛盾。
+- 仅以结构化摘要为输入生成英文 outline，避免两份结果相互矛盾。
 - 记录各处理阶段的状态，支持失败重试和断点续跑。
 
 首个版本只提供 CLI，不提供 Web UI、多用户管理、向量检索或自动下载论文。
@@ -27,7 +27,7 @@ Passagen 是一个通过 CLI 整理 paper PDF，并调用 LLM 生成结构化英
   -> 按章节切分正文
   -> LLM 生成结构化摘要
   -> Schema 校验和有限修复
-  -> 基于结构化摘要生成中文 outline
+  -> 基于结构化摘要生成英文 outline
   -> 归档生成结果
 ```
 
@@ -180,52 +180,107 @@ parser: grobid | pymupdf
 所有非必填字段均允许 `null`。当论文没有报告相关内容时必须输出 `null`，不得根据常识补写。列表字段可为空列表。
 
 ```yaml
+schema_version: "2"
+
 identity:
   title: string
   authors: [string]
-  tags: [string]
   year: integer | null
   venue: string | null
   doi: string | null
   arxiv_id: string | null
 
+classification:
+  paper_type: string | null
+  topics: [string]
+  keywords: [string]
+
 problem:
+  context: string | null
   problem_statement: string | null
   motivation: string | null
-  limitations_of_prior_work: [string]
+  goals: [string]
+  non_goals: [string]
+  assumptions: [string]
+  prior_work_limitations: [string]
 
-approach:
-  core_idea: string | null
-  architecture: string | null
-  algorithm: string | null
-  novelty: [string]
+contributions:
+  - category: string | null
+    statement: string
+    evidence_pages: [integer]
 
-system:
-  hardware: [string]
-  software: [string]
+design:
+  overview: string | null
+  components:
+    - name: string
+      role: string | null
+      details: [string]
+      interactions: [string]
+      evidence_pages: [integer]
+  processes:
+    - name: string
+      description: string | null
+      steps: [string]
+      evidence_pages: [integer]
+  key_mechanisms: [string]
+  design_decisions: [string]
+  tradeoffs: [string]
 
 implementation:
-  tools_and_dependencies: [string]
+  prototype_scope: string | null
+  implemented_components: [string]
+  languages: [string]
+  frameworks_and_dependencies: [string]
+  hardware_platforms: [string]
+  software_platforms: [string]
+  code_size: string | null
+  deployment_model: string | null
+  engineering_details: [string]
 
 evaluation:
-  key_results:
-    - claim: string
-      value: string | null
-      baseline: string | null
-      evidence_pages: [integer]
+  research_questions: [string]
+  environment:
+    hardware: [string]
+    software: [string]
+    topology_or_scale: string | null
+    configuration: [string]
+  baselines: [string]
   datasets: [string]
   workloads: [string]
+  metrics: [string]
+  methodology: [string]
+  results:
+    - research_question: string | null
+      metric: string
+      metric_direction: higher_is_better | lower_is_better | neutral | unknown
+      subject: string
+      subject_value: string | null
+      baseline: string | null
+      baseline_value: string | null
+      improvement: string | null
+      conditions: [string]
+      evidence_pages: [integer]
+  ablations: [] # 与 results 使用相同结构
 
-conclusion:
+discussion:
   limitations: [string]
-  useful_conclusions: [string]
-  reusable_evaluation_methods: [string]
+  tradeoffs: [string]
+  threats_to_validity: [string]
+  applicability: [string]
+  future_work: [string]
+  conclusions: [string]
+  reusable_methods: [string]
 
-research_connections:
-  related_works:
-    - title: string
+related_work:
+  groups:
+    - area: string
+      representative_works: [string]
       relationship: string | null
+      distinction: string | null
+      evidence_pages: [integer]
 ```
+
+`identity` 保存在 Summary artifact 中，但最终值由数据库中的 PaperRecord 覆盖，LLM 不具有修改 title、authors、year、venue、DOI 或 arXiv ID 的权限。Schema v2 是不兼容变更，v1 Summary 和基于它生成的 Outline 必须使用 `update <paper-id> --force` 重建。
 
 正文超过模型上下文限制时，先按章节切分并生成中间事实摘要，再合并为最终结构化摘要。中间结果应保留，失败重试时不重复处理成功分块。
 
@@ -245,9 +300,9 @@ LLM 必须使用支持结构化输出的调用方式；无论供应商是否声�
 
 Schema 具有独立版本号。Schema 或 prompt 更新后，可以显式重新生成旧论文，而不将旧产物误认为当前版本结果。
 
-## 中文 Outline
+## 英文 Outline
 
-中文 outline 只能在结构化摘要通过校验后生成。输入为规范化后的结构化摘要，不再次直接读取 PDF，也不独立总结全文。
+英文 outline 只能在结构化摘要通过校验后生成。输入为规范化后的结构化摘要，不再次直接读取 PDF，也不独立总结全文。
 
 outline 使用论文式组织方式，包含：
 
@@ -258,7 +313,7 @@ outline 使用论文式组织方式，包含：
 - Evaluation
 - Related Work
 
-当结构化摘要中的对应内容为 `null` 或空列表时，outline 应明确省略该内容，不允许模型自行补充事实。结果保存为 Markdown。
+Outline 使用 section thesis、named point、supporting details 和 evidence pages 的两级结构。结构化摘要中的对应内容为 `null` 或空列表时，应省略该内容，不允许模型自行补充事实。结果保存为 Markdown。
 
 ## LLM Provider
 
@@ -348,7 +403,7 @@ data/
       extracted.json
       summary.json
       summary.yaml
-      outline.zh.md
+      outline.md
   passagen.db
 ```
 
@@ -371,7 +426,7 @@ data/
 - GROBID 默认解析和 PyMuPDF 降级解析；
 - 一个 OpenAI-compatible LLM provider；
 - Pydantic/JSON Schema 校验及有限修复；
-- 英文结构化摘要和基于该摘要生成的中文 outline；
+- 英文结构化摘要和基于该摘要生成的英文 outline；
 - SQLite 状态管理、断点续跑和失败重试。
 
 首版不实现 Web UI、OCR、向量数据库、多用户管理和论文自动下载。

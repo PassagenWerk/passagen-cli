@@ -4,17 +4,28 @@ import hashlib
 import json
 import logging
 import os
-import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+    model_validator,
+)
 
 from passagen.config import LlmSettings, OutliningSettings
 from passagen.llm import LlmProvider, LlmProviderError, OpenAICompatibleProvider
 from passagen.models import PaperStatus
+from passagen.prompting import (
+    PromptTemplate,
+    PromptTemplateError,
+    load_outline_prompt_template,
+)
 from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
 from passagen.repository import (
     ArtifactRecord,
@@ -31,49 +42,80 @@ from passagen.stages.progress import ProgressCallback, report_progress
 from passagen.stages.summarization import SUMMARY_SCHEMA_VERSION, StructuredSummary
 
 logger = logging.getLogger(__name__)
-OUTLINE_SCHEMA_VERSION = "1"
-OUTLINE_PROMPT_VERSION = "1"
+OUTLINE_SCHEMA_VERSION = "2"
+OUTLINE_PROMPT_VERSION = "2"
 SUMMARY_ARTIFACT_KIND = "summary_json"
-OUTLINE_ARTIFACT_KIND = "outline_zh_md"
-_CHINESE_CHARACTER = re.compile(r"[\u3400-\u9fff]")
+OUTLINE_ARTIFACT_KIND = "outline_md"
 _SECTIONS = (
     ("introduction", "Introduction"),
-    ("background", "Background"),
+    ("background", "Background and Motivation"),
     ("design", "Design"),
     ("implementation", "Implementation"),
     ("evaluation", "Evaluation"),
+    ("limitations", "Limitations and Trade-offs"),
     ("related_work", "Related Work"),
+    ("conclusion", "Conclusion"),
 )
+NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class OutlineError(RuntimeError):
     pass
 
 
-class ChineseOutline(BaseModel):
+class OutlinePoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    introduction: list[str] = Field(default_factory=list)
-    background: list[str] = Field(default_factory=list)
-    design: list[str] = Field(default_factory=list)
-    implementation: list[str] = Field(default_factory=list)
-    evaluation: list[str] = Field(default_factory=list)
-    related_work: list[str] = Field(default_factory=list)
+    topic: NonEmptyText = Field(description="A specific named subtopic within the section.")
+    details: list[NonEmptyText] = Field(
+        default_factory=list,
+        description="Supporting technical details grounded in the validated summary.",
+    )
+    evidence_pages: list[int] = Field(
+        default_factory=list,
+        description="Evidence pages copied from the summary when available.",
+    )
 
-    @field_validator("*")
-    @classmethod
-    def require_chinese_content(cls, items: list[str]) -> list[str]:
-        for item in items:
-            if not item.strip() or _CHINESE_CHARACTER.search(item) is None:
-                raise ValueError("outline entries must be non-empty Chinese text")
-        return items
+
+class OutlineSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thesis: NonEmptyText | None = Field(
+        default=None, description="A concise section-level thesis grounded in the summary."
+    )
+    points: list[OutlinePoint] = Field(
+        default_factory=list, description="Named subtopics and supporting details."
+    )
+
+    @property
+    def has_content(self) -> bool:
+        return self.thesis is not None or bool(self.points)
+
+
+class PaperOutline(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    introduction: OutlineSection = Field(default_factory=OutlineSection)
+    background: OutlineSection = Field(default_factory=OutlineSection)
+    design: OutlineSection = Field(default_factory=OutlineSection)
+    implementation: OutlineSection = Field(default_factory=OutlineSection)
+    evaluation: OutlineSection = Field(default_factory=OutlineSection)
+    limitations: OutlineSection = Field(default_factory=OutlineSection)
+    related_work: OutlineSection = Field(default_factory=OutlineSection)
+    conclusion: OutlineSection = Field(default_factory=OutlineSection)
+
+    @model_validator(mode="after")
+    def require_content(self) -> PaperOutline:
+        if not any(getattr(self, field).has_content for field, _heading in _SECTIONS):
+            raise ValueError("outline must contain at least one non-empty section")
+        return self
 
 
 @dataclass(frozen=True, slots=True)
 class OutlineResult:
     paper: PaperRecord
     artifact: ArtifactRecord | None
-    outline: ChineseOutline | None
+    outline: PaperOutline | None
     updated: bool
 
 
@@ -111,6 +153,11 @@ def outline_paper(
     if force and paper.status is not PaperStatus.SUMMARIZED:
         update_paper_status(database_path, paper_id, PaperStatus.SUMMARIZED)
 
+    try:
+        prompt_template = load_outline_prompt_template(outlining.prompt_path)
+    except PromptTemplateError as exc:
+        raise OutlineError(str(exc)) from exc
+
     if provider_health is not None:
         try:
             provider_health.require("llm")
@@ -121,13 +168,13 @@ def outline_paper(
     except LlmProviderError as exc:
         raise OutlineError(str(exc)) from exc
     run_id = start_processing_run(database_path, paper_id, "outline")
-    prompt = _outline_prompt(summary)
+    prompt = _outline_prompt(prompt_template, summary)
     diagnostic_path = (
         execution_log_dir / "external" / "llm" / paper_id / "outline.json"
         if execution_log_dir is not None
         else None
     )
-    report_progress(progress, "Generating Chinese outline...")
+    report_progress(progress, "Generating English outline...")
     raw_response: str | None = None
     try:
         response = llm.generate(prompt, max_tokens=outlining.max_output_tokens)
@@ -149,12 +196,13 @@ def outline_paper(
             outlining.max_output_tokens,
             response.content,
         )
-        outline = ChineseOutline.model_validate(_decode_json(response.content))
+        outline = PaperOutline.model_validate(_decode_json(response.content))
         markdown_content = _render_markdown(summary.identity.title, outline).encode()
         summary_sha256 = hashlib.sha256(summary_content).hexdigest()
         source = {
             "outline_schema_version": OUTLINE_SCHEMA_VERSION,
             "prompt_version": OUTLINE_PROMPT_VERSION,
+            "prompt_sha256": prompt_template.sha256,
             "summary_schema_version": summary.schema_version,
             "summary_sha256": summary_sha256,
             "provider": llm.provider_name,
@@ -163,7 +211,7 @@ def outline_paper(
             "summary": summary.model_dump(mode="json"),
         }
         source_content = (json.dumps(source, ensure_ascii=False, indent=2) + "\n").encode()
-        markdown_path = Path("papers") / paper_id / "outline.zh.md"
+        markdown_path = Path("papers") / paper_id / "outline.md"
         source_path = Path("papers") / paper_id / "outline.source.json"
         _atomic_write(data_dir / markdown_path, markdown_content)
         _atomic_write(data_dir / source_path, source_content)
@@ -201,28 +249,20 @@ def outline_paper(
             error=str(exc),
         )
         logger.error("outline failed: paper_id=%s error=%s", paper_id, exc)
-        raise OutlineError(f"Chinese outline generation failed: {exc}") from exc
+        raise OutlineError(f"English outline generation failed: {exc}") from exc
     except KeyboardInterrupt:
         finish_processing_run(database_path, run_id, error_message="interrupted")
         raise
     finish_processing_run(database_path, run_id)
-    report_progress(progress, "Chinese outline saved.")
+    report_progress(progress, "English outline saved.")
     logger.info("outline finished: paper_id=%s artifact=%s", paper_id, markdown_path)
     return OutlineResult(updated, artifact, outline, updated=True)
 
 
-def _outline_prompt(summary: StructuredSummary) -> str:
-    return (
-        "Generate a concise Chinese outline using only facts in the supplied validated summary. "
-        "Return JSON only. Translate faithfully; do not add explanations, facts, or placeholders. "
-        "Each value must be an array of Chinese bullet text. Use an empty array when the summary "
-        "does not support a section. Map content into exactly these sections: introduction for the "
-        "problem and motivation; background for prior-work limitations; design for the approach "
-        "and "
-        "system; implementation for implementation details; evaluation for results, datasets, and "
-        "workloads; related_work for research connections. Schema: "
-        f"{json.dumps(ChineseOutline.model_json_schema(), ensure_ascii=False)}\n\n"
-        f"Validated summary:\n{summary.model_dump_json()}"
+def _outline_prompt(template: PromptTemplate, summary: StructuredSummary) -> str:
+    return template.render(
+        schema=json.dumps(PaperOutline.model_json_schema(), ensure_ascii=False),
+        summary=summary.model_dump_json(),
     )
 
 
@@ -236,15 +276,21 @@ def _decode_json(raw: str) -> dict[str, Any]:
     return result
 
 
-def _render_markdown(title: str, outline: ChineseOutline) -> str:
-    lines = [f"# {title} 中文提纲"]
-    values = outline.model_dump()
+def _render_markdown(title: str, outline: PaperOutline) -> str:
+    lines = [f"# {title}: Technical Outline"]
     for field, heading in _SECTIONS:
-        items = values[field]
-        if not items:
+        section: OutlineSection = getattr(outline, field)
+        if not section.has_content:
             continue
         lines.extend(("", f"## {heading}"))
-        lines.extend(f"- {item.strip()}" for item in items)
+        if section.thesis is not None:
+            lines.extend(("", section.thesis))
+        for point in section.points:
+            lines.extend(("", f"### {point.topic}"))
+            lines.extend(f"- {detail}" for detail in point.details)
+            if point.evidence_pages:
+                pages = ", ".join(str(page) for page in point.evidence_pages)
+                lines.append(f"- Evidence pages: {pages}")
     return "\n".join(lines) + "\n"
 
 
@@ -264,6 +310,7 @@ def _write_diagnostic(
         "model": provider.model,
         "max_tokens": max_tokens,
         "prompt": prompt,
+        "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
     }
     if response is not None:
         document["response"] = response

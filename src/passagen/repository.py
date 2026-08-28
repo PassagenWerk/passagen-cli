@@ -305,7 +305,7 @@ def save_outline_artifacts(
         outline_artifact = _upsert_artifact(
             connection,
             paper_id,
-            "outline_zh_md",
+            "outline_md",
             markdown_path,
             version,
             markdown_sha256,

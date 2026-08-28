@@ -38,10 +38,20 @@ def setup_summarized_paper(tmp_path: Path) -> tuple[Path, Path, str]:
     register_pdf(database_path, paper, Path("pdfs/bb/paper.pdf"))
     summary = StructuredSummary.model_validate(
         {
-            "identity": {"title": "Test Paper", "authors": [], "tags": []},
+            "identity": {"title": "Test Paper", "authors": []},
             "problem": {"problem_statement": "A test problem", "motivation": "A test need"},
             "evaluation": {
-                "key_results": [{"claim": "The method is faster", "evidence_pages": [4]}]
+                "results": [
+                    {
+                        "metric": "latency",
+                        "metric_direction": "lower_is_better",
+                        "subject": "Test method",
+                        "subject_value": "1 ms",
+                        "baseline": "Baseline",
+                        "baseline_value": "2 ms",
+                        "evidence_pages": [4],
+                    }
+                ]
             },
         }
     )
@@ -69,12 +79,26 @@ def setup_summarized_paper(tmp_path: Path) -> tuple[Path, Path, str]:
 def valid_outline() -> str:
     return json.dumps(
         {
-            "introduction": ["本文研究一个测试问题及其动机。"],
-            "background": [],
-            "design": [],
-            "implementation": [],
-            "evaluation": ["实验表明该方法更快，证据见第 4 页。"],
-            "related_work": [],
+            "introduction": {
+                "thesis": "The paper studies a test problem and its motivation.",
+                "points": [
+                    {
+                        "topic": "Research problem",
+                        "details": ["The paper addresses a test problem."],
+                        "evidence_pages": [1],
+                    }
+                ],
+            },
+            "evaluation": {
+                "thesis": "The evaluation reports a performance improvement.",
+                "points": [
+                    {
+                        "topic": "Performance",
+                        "details": ["The method is faster than its baseline."],
+                        "evidence_pages": [4],
+                    }
+                ],
+            },
         }
     )
 
@@ -96,16 +120,19 @@ def test_outline_saves_markdown_source_and_call_audit(tmp_path: Path) -> None:
     assert result.updated is True
     assert result.paper.status is PaperStatus.OUTLINED
     assert provider.max_tokens == [1200]
-    markdown = (data_dir / "papers" / paper_id / "outline.zh.md").read_text()
-    assert "# Test Paper 中文提纲" in markdown
+    markdown = (data_dir / "papers" / paper_id / "outline.md").read_text()
+    assert "# Test Paper: Technical Outline" in markdown
     assert "## Introduction" in markdown
     assert "## Evaluation" in markdown
-    assert "## Background" not in markdown
+    assert "### Performance" in markdown
+    assert "Evidence pages: 4" in markdown
+    assert "## Background and Motivation" not in markdown
     source = json.loads(
         (data_dir / "papers" / paper_id / "outline.source.json").read_text(encoding="utf-8")
     )
     assert source["model"] == "outline-model"
-    assert source["prompt_version"] == "1"
+    assert source["prompt_version"] == "2"
+    assert source["prompt_sha256"]
     assert source["summary"]["identity"]["title"] == "Test Paper"
     assert get_artifact(database_path, paper_id, "outline_source_json") is not None
     diagnostic = json.loads(
@@ -157,7 +184,7 @@ def test_updated_summary_marks_existing_outline_stale(tmp_path: Path) -> None:
     summary_path = Path("papers") / paper_id / "summary.json"
     yaml_path = Path("papers") / paper_id / "summary.yaml"
     summary = StructuredSummary.model_validate(
-        {"identity": {"title": "Updated Paper", "authors": [], "tags": []}}
+        {"identity": {"title": "Updated Paper", "authors": []}}
     )
     content = (summary.model_dump_json(indent=2) + "\n").encode()
     (data_dir / summary_path).write_bytes(content)
@@ -214,18 +241,13 @@ def test_forced_outline_failure_stops_at_summarized(tmp_path: Path) -> None:
         assert connection.execute("SELECT status FROM papers").fetchone()[0] == "summarized"
 
 
-def test_outline_rejects_non_chinese_or_unknown_content(tmp_path: Path) -> None:
+def test_outline_rejects_empty_or_unknown_content(tmp_path: Path) -> None:
     database_path, data_dir, paper_id = setup_summarized_paper(tmp_path)
     provider = FakeProvider(
         json.dumps(
             {
-                "introduction": ["Only English"],
-                "background": [],
-                "design": [],
-                "implementation": [],
-                "evaluation": [],
-                "related_work": [],
-                "extra": ["额外事实"],
+                "introduction": {"points": [{"topic": "   ", "details": [], "evidence_pages": []}]},
+                "extra": {"thesis": "Unsupported section"},
             }
         )
     )

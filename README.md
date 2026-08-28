@@ -1,7 +1,7 @@
 # Passagen
 
 Passagen is a local CLI that imports paper PDFs, resolves metadata, parses full text, produces a
-validated English summary, and generates a Chinese outline.
+validated English summary, and generates a detailed English outline.
 
 ## Install
 

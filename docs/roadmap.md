@@ -13,7 +13,7 @@
   -> 论文结构解析
   -> 元数据补全
   -> 英文结构化摘要
-  -> 中文 outline
+  -> 英文 outline
   -> 本地归档和状态查询
 ```
 
@@ -225,7 +225,7 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 ### 交付物
 
 - `passagen summarize <paper-id> [--force]`
-- 第一版 summary Schema
+- 通用 summary Schema v2
 - OpenAI-compatible provider
 - 分块、合并、校验和修复流程
 
@@ -237,22 +237,22 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 - 记录 provider、模型、prompt/Schema 版本、token 用量和错误。
 - 使用固定 LLM 响应测试合法输出、格式损坏、类型错误和修复失败。
 
-## M6：中文 Outline
+## M6：英文 Outline
 
 状态：已实现。
 
 ### 工作内容
 
-- 只读取通过校验的 `summary.json` 生成中文 outline。
+- 只读取通过校验的 `summary.json` 生成英文 outline。
 - 固定 Introduction、Background、Design、Implementation、Evaluation 和 Related Work 章节。
 - 对 `null` 和空列表对应内容执行省略，不允许补充摘要之外的事实。
 - 保存生成所使用的 summary、prompt 和模型版本。
-- 将结果保存为 `outline.zh.md`。
+- 将结果保存为 `outline.md`。
 
 ### 交付物
 
 - `passagen outline <paper-id> [--force]`
-- 中文 outline prompt
+- 英文 outline prompt
 - Markdown renderer
 
 ### 验收条件
@@ -348,7 +348,7 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 
 ### v0.2：完整产物闭环
 
-完成 M6-M7。能够批量生成中文 outline，并支持失败恢复和幂等执行。
+完成 M6-M7。能够批量生成英文 outline，并支持失败恢复和幂等执行。
 
 ### v1.0：稳定的个人 CLI 工具
 

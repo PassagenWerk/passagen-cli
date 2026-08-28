@@ -69,7 +69,7 @@ pipeline:
     assert settings.pipeline.parsing.parser.value == "pymupdf"
     assert settings.providers.llm.model == "test-model"
     assert settings.pipeline.summarization.max_chunk_characters == 2000
-    assert settings.pipeline.outlining.max_output_tokens == 2000
+    assert settings.pipeline.outlining.max_output_tokens == 4000
 
 
 def test_cli_override_has_highest_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

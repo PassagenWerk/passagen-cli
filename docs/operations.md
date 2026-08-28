@@ -85,6 +85,41 @@ passagen artifacts check
 There is no automatic in-process retry. A failure leaves the Paper at the last successful stage;
 correct the cause and invoke `update` again. `--force` rebuilds from metadata instead of resuming.
 
+## Prompt Templates
+
+Passagen ships versioned templates for fact extraction, summary generation, summary repair, and
+English outline generation. Override them with file paths in `passagen.yaml`:
+
+```yaml
+pipeline:
+  summarization:
+    facts_prompt_path: prompts/facts.txt
+    summary_prompt_path: prompts/summary.txt
+    repair_prompt_path: prompts/repair.txt
+  outlining:
+    prompt_path: prompts/outline.txt
+```
+
+Use `null` to select the built-in template. `passagen config check` verifies that every configured
+file is readable and contains exactly the required placeholders:
+
+```text
+facts:   $schema, $chunk
+summary: $schema, $identity, $facts
+repair:  $schema, $validation_error, $candidate
+outline: $schema, $summary
+```
+
+Templates use Python `string.Template` syntax. Literal dollar signs must be written as `$$`.
+Pydantic models remain the canonical output Schema and are embedded into templates through
+`$schema`. Fact, summary, and outline responses are validated before becoming artifacts. The fact
+cache key includes the fact-template SHA-256, so changing that template invalidates cached facts.
+Run `update <paper-id> --force` after changing summary, repair, or outline templates so existing
+final artifacts are regenerated.
+
+Summary Schema v2 is incompatible with earlier Summary artifacts. Rebuild papers created with
+Schema v1 by running `update <paper-id> --force`.
+
 ## Backup And Transfer
 
 Create a transactionally consistent SQLite backup before copying user data:

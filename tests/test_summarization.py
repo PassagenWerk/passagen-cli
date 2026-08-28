@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from passagen.config import LlmSettings, PipelineSettings, ProvidersSettings, SummarizationSettings
 from passagen.db import connect_database, initialize_database
@@ -12,7 +13,7 @@ from passagen.llm import LlmResponse
 from passagen.models import Paper, PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
 from passagen.repository import register_pdf, save_parsed_artifact
-from passagen.stages.summarization import SummaryError, summarize_paper
+from passagen.stages.summarization import StructuredSummary, SummaryError, summarize_paper
 from passagen.stages.updating import update_papers
 
 
@@ -58,20 +59,53 @@ def setup_parsed_paper(tmp_path: Path) -> tuple[Path, Path, str]:
 
 
 def valid_summary(title: str = "Test Paper") -> str:
-    return json.dumps({"identity": {"title": title, "authors": [], "tags": []}})
+    return json.dumps({"identity": {"title": title, "authors": []}})
 
 
 def valid_outline() -> str:
     return json.dumps(
         {
-            "introduction": ["本文介绍测试问题。"],
-            "background": [],
-            "design": [],
-            "implementation": [],
-            "evaluation": [],
-            "related_work": [],
+            "introduction": {
+                "thesis": "The paper introduces a test problem.",
+                "points": [],
+            }
         }
     )
+
+
+def test_summary_v2_separates_subject_and_baseline_values() -> None:
+    summary = StructuredSummary.model_validate(
+        {
+            "identity": {"title": "Test", "authors": []},
+            "evaluation": {
+                "results": [
+                    {
+                        "metric": "latency",
+                        "metric_direction": "lower_is_better",
+                        "subject": "New system",
+                        "subject_value": "1 ms",
+                        "baseline": "Baseline",
+                        "baseline_value": "2 ms",
+                        "improvement": "50% lower latency",
+                        "evidence_pages": [7],
+                    }
+                ]
+            },
+        }
+    )
+
+    assert summary.schema_version == "2"
+    assert summary.evaluation.results[0].subject_value == "1 ms"
+    assert summary.evaluation.results[0].baseline_value == "2 ms"
+    with pytest.raises(ValidationError):
+        StructuredSummary.model_validate(
+            {
+                "identity": {"title": "Test", "authors": []},
+                "evaluation": {
+                    "key_results": [{"claim": "Ambiguous comparison", "value": "1 ms vs 2 ms"}]
+                },
+            }
+        )
 
 
 def test_summarize_saves_validated_json_yaml_and_call_audit(tmp_path: Path) -> None:
@@ -91,7 +125,7 @@ def test_summarize_saves_validated_json_yaml_and_call_audit(tmp_path: Path) -> N
     assert result.updated is True
     assert result.paper.status is PaperStatus.SUMMARIZED
     assert result.summary is not None
-    assert result.summary.identity.title == "Test Paper"
+    assert result.summary.identity.title == "paper.pdf"
     assert (data_dir / "papers" / paper_id / "summary.json").is_file()
     assert (data_dir / "papers" / paper_id / "summary.yaml").is_file()
     call_dir = tmp_path / "logs" / "run" / "external" / "llm" / paper_id
@@ -183,7 +217,7 @@ def test_summarize_reuses_successful_section_facts_when_forced(tmp_path: Path) -
     )
 
     assert result.summary is not None
-    assert result.summary.identity.title == "Rebuilt"
+    assert result.summary.identity.title == "paper.pdf"
     assert len(provider.prompts) == 1
 
 

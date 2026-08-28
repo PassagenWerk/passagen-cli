@@ -20,6 +20,11 @@ from passagen.config import ConfigError, ParserBackend, Settings, load_settings
 from passagen.db import backup_database, current_version, initialize_database
 from passagen.maintenance import check_artifacts
 from passagen.models import PaperStatus
+from passagen.prompting import (
+    PromptTemplateError,
+    load_outline_prompt_template,
+    load_summary_prompt_templates,
+)
 from passagen.providers import ProviderHealthSnapshot, check_provider_health
 from passagen.repository import (
     DatabaseNotInitializedError,
@@ -142,6 +147,17 @@ def main(
 def config_check(ctx: typer.Context) -> None:
     settings = _state(ctx).settings
     logger.info("config check started")
+    try:
+        load_summary_prompt_templates(
+            settings.pipeline.summarization.facts_prompt_path,
+            settings.pipeline.summarization.summary_prompt_path,
+            settings.pipeline.summarization.repair_prompt_path,
+        )
+        load_outline_prompt_template(settings.pipeline.outlining.prompt_path)
+    except PromptTemplateError as exc:
+        logger.error("prompt configuration failed: %s", exc)
+        console.print(f"[red]Prompt configuration error:[/red] {exc}", highlight=False)
+        raise typer.Exit(code=2) from exc
     table = Table(show_header=False)
     table.add_row("data_dir", str(settings.resolved_data_dir))
     table.add_row("database_path", str(settings.resolved_database_path))
@@ -159,6 +175,22 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row(
         "pipeline.outlining.max_output_tokens",
         str(settings.pipeline.outlining.max_output_tokens),
+    )
+    table.add_row(
+        "pipeline.summarization.facts_prompt_path",
+        str(settings.pipeline.summarization.facts_prompt_path or "built-in"),
+    )
+    table.add_row(
+        "pipeline.summarization.summary_prompt_path",
+        str(settings.pipeline.summarization.summary_prompt_path or "built-in"),
+    )
+    table.add_row(
+        "pipeline.summarization.repair_prompt_path",
+        str(settings.pipeline.summarization.repair_prompt_path or "built-in"),
+    )
+    table.add_row(
+        "pipeline.outlining.prompt_path",
+        str(settings.pipeline.outlining.prompt_path or "built-in"),
     )
     console.print(table)
 
@@ -514,12 +546,12 @@ def summarize_command(
 def outline_command(
     ctx: typer.Context,
     paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
-    force: Annotated[bool, typer.Option(help="Rebuild an existing Chinese outline.")] = False,
+    force: Annotated[bool, typer.Option(help="Rebuild an existing English outline.")] = False,
 ) -> None:
     state = _state(ctx)
     settings = state.settings
     try:
-        with ConsoleProgress(console, f"Generating Chinese outline for {paper_id}...") as progress:
+        with ConsoleProgress(console, f"Generating English outline for {paper_id}...") as progress:
             result = outline_paper(
                 settings.resolved_database_path,
                 settings.resolved_data_dir,
@@ -537,7 +569,7 @@ def outline_command(
         raise typer.Exit(code=1) from exc
     if result.updated and result.artifact is not None:
         console.print(
-            f"Chinese outline saved for {paper_id}; artifact={result.artifact.path}",
+            f"English outline saved for {paper_id}; artifact={result.artifact.path}",
             markup=False,
         )
     else:
@@ -572,7 +604,7 @@ def _paper_details(settings: Settings, paper: PaperRecord) -> list[tuple[str, st
     extracted_path = settings.resolved_data_dir / extracted.path if extracted is not None else None
     summary = get_artifact(settings.resolved_database_path, paper.id, "summary_json")
     summary_path = settings.resolved_data_dir / summary.path if summary is not None else None
-    outline = get_artifact(settings.resolved_database_path, paper.id, "outline_zh_md")
+    outline = get_artifact(settings.resolved_database_path, paper.id, "outline_md")
     outline_path = settings.resolved_data_dir / outline.path if outline is not None else None
     return [
         ("id", paper.id),
