@@ -1,4 +1,5 @@
 import importlib
+from importlib.metadata import version
 from pathlib import Path
 
 import pymupdf
@@ -95,6 +96,13 @@ def test_help() -> None:
     assert "Manage paper PDFs" in result.stdout
     assert "Import PDFs from a directory" in result.stdout
     assert "Resume one or all papers" in result.stdout
+
+
+def test_version_uses_package_metadata() -> None:
+    result = runner.invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == version("passagen")
 
 
 @pytest.mark.parametrize(

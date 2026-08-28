@@ -284,7 +284,7 @@ export PASSAGEN_API_KEY=your-litellm-key
 这与 OpenAI SDK 的以下写法在 HTTP 层等价：
 
 ```python
-extra_body={"thinking": {"type": "disabled"}}
+extra_body = {"thinking": {"type": "disabled"}}
 ```
 
 直连 `deepseek.com` 时程序也会自动发送该字段。通过 LiteLLM 中转时无法根据 URL 判断上游模型，因此需要显式设置 `disable_thinking`。
@@ -553,3 +553,14 @@ uv build
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/roadmap.md`](docs/roadmap.md)
 - [`docs/operations.md`](docs/operations.md)
+
+## 许可证
+
+Passagen 仅按照 [GNU Affero General Public License v3.0](LICENSES/AGPL-3.0-only.txt)
+发布，SPDX 标识为 `AGPL-3.0-only`。
+
+运行时依赖 PyMuPDF 由其权利人按照 AGPLv3 或 Artifex 商业许可证双重授权。如需在不
+遵守 PyMuPDF AGPL 条款的情况下使用它，需要向 Artifex 获取适用的商业许可证，或者先
+将 PyMuPDF 替换为许可证兼容的实现。Artifex 的商业许可证不会免除 Passagen 自身的
+AGPLv3 义务；闭源分发 Passagen 还需要获得 Passagen 全部相关权利人的单独授权。其他
+第三方依赖继续适用各自的许可证。

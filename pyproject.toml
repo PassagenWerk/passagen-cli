@@ -2,6 +2,9 @@
 name = "passagen"
 version = "0.1.0"
 description = "Manage paper PDFs and generate structured summaries"
+readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE", "LICENSES/AGPL-3.0-only.txt"]
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28,<1",
