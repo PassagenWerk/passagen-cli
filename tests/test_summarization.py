@@ -61,6 +61,19 @@ def valid_summary(title: str = "Test Paper") -> str:
     return json.dumps({"identity": {"title": title, "authors": [], "tags": []}})
 
 
+def valid_outline() -> str:
+    return json.dumps(
+        {
+            "introduction": ["本文介绍测试问题。"],
+            "background": [],
+            "design": [],
+            "implementation": [],
+            "evaluation": [],
+            "related_work": [],
+        }
+    )
+
+
 def test_summarize_saves_validated_json_yaml_and_call_audit(tmp_path: Path) -> None:
     database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
     provider = FakeProvider(['{"facts": ["A test paper"]}', valid_summary()])
@@ -174,9 +187,9 @@ def test_summarize_reuses_successful_section_facts_when_forced(tmp_path: Path) -
     assert len(provider.prompts) == 1
 
 
-def test_update_advances_parsed_paper_to_summary_when_llm_is_enabled(tmp_path: Path) -> None:
+def test_update_advances_parsed_paper_to_outline_when_llm_is_enabled(tmp_path: Path) -> None:
     database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
-    provider = FakeProvider(['{"facts": []}', valid_summary()])
+    provider = FakeProvider(['{"facts": []}', valid_summary(), valid_outline()])
 
     result = update_papers(
         database_path,
@@ -186,7 +199,7 @@ def test_update_advances_parsed_paper_to_summary_when_llm_is_enabled(tmp_path: P
         summary_provider=provider,
     )
 
-    assert result.target_status is PaperStatus.SUMMARIZED
+    assert result.target_status is PaperStatus.OUTLINED
     assert [paper.id for paper in result.updated] == [paper_id]
-    assert result.updated[0].status is PaperStatus.SUMMARIZED
-    assert len(provider.prompts) == 2
+    assert result.updated[0].status is PaperStatus.OUTLINED
+    assert len(provider.prompts) == 3

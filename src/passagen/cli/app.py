@@ -27,6 +27,7 @@ from passagen.repository import (
     list_papers,
 )
 from passagen.stages.metadata import MetadataResolutionError, resolve_paper_metadata
+from passagen.stages.outlining import OutlineError, outline_paper
 from passagen.stages.parsing import PaperParsingError, parse_paper
 from passagen.stages.scanning import ScanDirectoryError, scan_directory
 from passagen.stages.summarization import SummaryError, summarize_paper
@@ -140,8 +141,15 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row("providers.grobid.base_url", settings.providers.grobid.base_url)
     table.add_row("providers.llm.base_url", settings.providers.llm.base_url)
     table.add_row("providers.llm.model", settings.providers.llm.model)
+    table.add_row(
+        "providers.llm.disable_thinking", str(settings.providers.llm.disable_thinking).lower()
+    )
     table.add_row("pipeline.metadata.first_pages", str(settings.pipeline.metadata.first_pages))
     table.add_row("pipeline.parsing.parser", settings.pipeline.parsing.parser.value)
+    table.add_row(
+        "pipeline.outlining.max_output_tokens",
+        str(settings.pipeline.outlining.max_output_tokens),
+    )
     console.print(table)
 
 
@@ -400,6 +408,40 @@ def summarize_command(
         console.print(f"Paper {paper_id} is already summarized; use --force to rebuild.")
 
 
+@app.command("outline")
+def outline_command(
+    ctx: typer.Context,
+    paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
+    force: Annotated[bool, typer.Option(help="Rebuild an existing Chinese outline.")] = False,
+) -> None:
+    state = _state(ctx)
+    settings = state.settings
+    try:
+        with ConsoleProgress(console, f"Generating Chinese outline for {paper_id}...") as progress:
+            result = outline_paper(
+                settings.resolved_database_path,
+                settings.resolved_data_dir,
+                paper_id,
+                settings.providers.llm,
+                settings.pipeline.outlining,
+                provider_health=state.provider_health,
+                execution_log_dir=state.execution_log_dir,
+                force=force,
+                progress=progress.update,
+            )
+    except (DatabaseNotInitializedError, OutlineError) as exc:
+        logger.error("outline command failed: paper_id=%s error=%s", paper_id, exc)
+        console.print(f"[red]Outline error:[/red] {exc}", highlight=False)
+        raise typer.Exit(code=1) from exc
+    if result.updated and result.artifact is not None:
+        console.print(
+            f"Chinese outline saved for {paper_id}; artifact={result.artifact.path}",
+            markup=False,
+        )
+    else:
+        console.print(f"Paper {paper_id} is already outlined; use --force to rebuild.")
+
+
 @app.command("show")
 def show(ctx: typer.Context, paper_id: Annotated[str, typer.Argument(help="Paper ID.")]) -> None:
     settings = _state(ctx).settings
@@ -426,6 +468,10 @@ def _paper_details(settings: Settings, paper: PaperRecord) -> list[tuple[str, st
     )
     extracted = get_artifact(settings.resolved_database_path, paper.id, "extracted_json")
     extracted_path = settings.resolved_data_dir / extracted.path if extracted is not None else None
+    summary = get_artifact(settings.resolved_database_path, paper.id, "summary_json")
+    summary_path = settings.resolved_data_dir / summary.path if summary is not None else None
+    outline = get_artifact(settings.resolved_database_path, paper.id, "outline_zh_md")
+    outline_path = settings.resolved_data_dir / outline.path if outline is not None else None
     return [
         ("id", paper.id),
         ("status", paper.status.value),
@@ -451,6 +497,8 @@ def _paper_details(settings: Settings, paper: PaperRecord) -> list[tuple[str, st
         ),
         ("managed_pdf_path", str(managed_path) if managed_path is not None else "-"),
         ("extracted_path", str(extracted_path) if extracted_path is not None else "-"),
+        ("summary_path", str(summary_path) if summary_path is not None else "-"),
+        ("outline_path", str(outline_path) if outline_path is not None else "-"),
         ("imported_at", paper.imported_at),
     ]
 

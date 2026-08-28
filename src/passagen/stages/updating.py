@@ -11,15 +11,18 @@ from passagen.models import PaperStatus
 from passagen.providers import ProviderHealthSnapshot
 from passagen.repository import PaperRecord, get_paper, list_papers
 from passagen.stages.metadata import MetadataResolutionError, resolve_paper_metadata
+from passagen.stages.outlining import OutlineError, outline_paper
 from passagen.stages.parsing import PaperParsingError, parse_paper
 from passagen.stages.progress import ProgressCallback, report_progress
 from passagen.stages.summarization import SummaryError, summarize_paper
 
-LATEST_IMPLEMENTED_STATUS = PaperStatus.SUMMARIZED
+LATEST_IMPLEMENTED_STATUS = PaperStatus.OUTLINED
 _UPDATE_PENDING_STATUSES = {
     PaperStatus.DISCOVERED,
     PaperStatus.FAILED,
     PaperStatus.METADATA_RESOLVED,
+    PaperStatus.PARSED,
+    PaperStatus.SUMMARIZED,
 }
 logger = logging.getLogger(__name__)
 
@@ -51,13 +54,13 @@ def update_papers(
     paper_id: str | None = None,
     *,
     summary_provider: LlmProvider | None = None,
+    outline_provider: LlmProvider | None = None,
     provider_health: ProviderHealthSnapshot | None = None,
     execution_log_dir: Path | None = None,
     force: bool = False,
     progress: ProgressCallback | None = None,
 ) -> UpdateResult:
     papers = _select_papers(database_path, paper_id)
-    summarize = True
     target_status = LATEST_IMPLEMENTED_STATUS
     logger.info(
         "update started: target=%s force=%s selected=%s latest_status=%s",
@@ -70,8 +73,7 @@ def update_papers(
     result = UpdateResult(target_status=target_status)
     total = len(papers)
     for index, paper in enumerate(papers, start=1):
-        pending_statuses = _UPDATE_PENDING_STATUSES | {PaperStatus.PARSED}
-        if not force and paper.status not in pending_statuses:
+        if not force and paper.status not in _UPDATE_PENDING_STATUSES:
             logger.info(
                 "update skipped: paper_id=%s status=%s reason=already_at_or_beyond_target",
                 paper.id,
@@ -110,7 +112,27 @@ def update_papers(
                     PaperStatus.FAILED,
                 }
             )
-            stage_total = int(needs_metadata) + int(needs_parsing) + int(summarize)
+            needs_summary = (
+                force
+                or needs_parsing
+                or current.status
+                in {
+                    PaperStatus.PARSED,
+                    PaperStatus.FAILED,
+                }
+            )
+            needs_outline = (
+                force
+                or needs_summary
+                or current.status
+                in {
+                    PaperStatus.SUMMARIZED,
+                    PaperStatus.FAILED,
+                }
+            )
+            stage_total = (
+                int(needs_metadata) + int(needs_parsing) + int(needs_summary) + int(needs_outline)
+            )
             stage_number = 0
             if needs_metadata:
                 stage_number += 1
@@ -182,7 +204,7 @@ def update_papers(
                 current = parsing.paper
                 warnings.extend(parsing.warnings)
                 logger.info("update stage finished: paper_id=%s stage=full_text", paper.id)
-            if summarize:
+            if needs_summary:
                 stage_number += 1
                 logger.info("update stage started: paper_id=%s stage=summarize", paper.id)
                 _report_paper_progress(
@@ -218,14 +240,50 @@ def update_papers(
                 )
                 current = summary.paper
                 logger.info("update stage finished: paper_id=%s stage=summarize", paper.id)
-        except (MetadataResolutionError, PaperParsingError, SummaryError) as exc:
+            if needs_outline:
+                stage_number += 1
+                logger.info("update stage started: paper_id=%s stage=outline", paper.id)
+                _report_paper_progress(
+                    progress,
+                    index,
+                    total,
+                    paper,
+                    "outline",
+                    "starting.",
+                    stage_number=stage_number,
+                    stage_total=stage_total,
+                )
+                outlined = outline_paper(
+                    database_path,
+                    data_dir,
+                    paper.id,
+                    providers.llm,
+                    pipeline.outlining,
+                    provider_health=provider_health,
+                    execution_log_dir=execution_log_dir,
+                    force=force,
+                    provider=outline_provider or summary_provider,
+                    progress=partial(
+                        _report_paper_progress,
+                        progress,
+                        index,
+                        total,
+                        paper,
+                        "outline",
+                        stage_number=stage_number,
+                        stage_total=stage_total,
+                    ),
+                )
+                current = outlined.paper
+                logger.info("update stage finished: paper_id=%s stage=outline", paper.id)
+        except (MetadataResolutionError, PaperParsingError, SummaryError, OutlineError) as exc:
             logger.error("update paper failed: paper_id=%s error=%s", paper.id, exc)
             result.failures.append(UpdateFailure(paper.id, str(exc)))
             _report_paper_progress(
                 progress, index, total, paper, "failed", "update failed; continuing."
             )
             continue
-        if needs_metadata or needs_parsing or summarize:
+        if needs_metadata or needs_parsing or needs_summary or needs_outline:
             result.updated.append(current)
             logger.info(
                 "update paper finished: paper_id=%s status=%s title=%s",

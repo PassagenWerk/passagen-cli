@@ -278,6 +278,50 @@ def save_summary_artifacts(
     return _paper_record(paper_row), summary_artifact
 
 
+def save_outline_artifacts(
+    database_path: Path,
+    paper_id: str,
+    markdown_path: Path,
+    source_path: Path,
+    *,
+    version: str,
+    markdown_sha256: str,
+    markdown_size_bytes: int,
+    source_sha256: str,
+    source_size_bytes: int,
+) -> tuple[PaperRecord, ArtifactRecord]:
+    _require_database(database_path)
+    with connect_database(database_path) as connection:
+        outline_artifact = _upsert_artifact(
+            connection,
+            paper_id,
+            "outline_zh_md",
+            markdown_path,
+            version,
+            markdown_sha256,
+            markdown_size_bytes,
+        )
+        _upsert_artifact(
+            connection,
+            paper_id,
+            "outline_source_json",
+            source_path,
+            version,
+            source_sha256,
+            source_size_bytes,
+        )
+        cursor = connection.execute(
+            "UPDATE papers SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (PaperStatus.OUTLINED.value, paper_id),
+        )
+        if cursor.rowcount != 1:
+            raise KeyError(paper_id)
+        paper_row = _select_paper(connection, "p.id = ?", (paper_id,))
+    if paper_row is None:
+        raise RuntimeError(f"Failed to reload outline artifact for {paper_id}")
+    return _paper_record(paper_row), outline_artifact
+
+
 def start_processing_run(database_path: Path, paper_id: str, stage: str) -> str:
     _require_database(database_path)
     run_id = str(uuid.uuid4())

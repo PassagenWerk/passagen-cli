@@ -35,3 +35,5 @@ pipeline:
     max_chunk_characters: 96000
     fact_max_output_tokens: 1500
     summary_max_output_tokens: 3000
+  outlining:
+    max_output_tokens: 2000

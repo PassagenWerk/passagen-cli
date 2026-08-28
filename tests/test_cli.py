@@ -23,6 +23,10 @@ def isolate_cli_working_directory(
         "passagen.stages.summarization.OpenAICompatibleProvider",
         lambda _settings: _FakeLlmProvider(),
     )
+    monkeypatch.setattr(
+        "passagen.stages.outlining.OpenAICompatibleProvider",
+        lambda _settings: _FakeLlmProvider(),
+    )
     monkeypatch.setattr("passagen.metadata.GrobidClient.is_available", lambda _client: True)
     monkeypatch.setattr(
         importlib.import_module("passagen.cli.app"),
@@ -44,6 +48,11 @@ class _FakeLlmProvider:
         del max_tokens
         if "Extract only the facts" in prompt:
             return LlmResponse('{"facts": []}')
+        if "Generate a concise Chinese outline" in prompt:
+            return LlmResponse(
+                '{"introduction":["本文介绍测试论文。"],"background":[],'
+                '"design":[],"implementation":[],"evaluation":[],"related_work":[]}'
+            )
         return LlmResponse('{"identity": {"title": "Test", "authors": [], "tags": []}}')
 
 
@@ -245,16 +254,17 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
     result = runner.invoke(app, [*common, "update", papers["first.pdf"].id])
 
     assert result.exit_code == 0
-    assert "Paper 1/1 [stage 1/3: metadata]" in result.stdout
-    assert "Paper 1/1 [stage 2/3: full text]" in result.stdout
-    assert "Paper 1/1 [stage 3/3: summary]" in result.stdout
+    assert "Paper 1/1 [stage 1/4: metadata]" in result.stdout
+    assert "Paper 1/1 [stage 2/4: full text]" in result.stdout
+    assert "Paper 1/1 [stage 3/4: summary]" in result.stdout
+    assert "Paper 1/1 [stage 4/4: outline]" in result.stdout
     assert "updated: 1, skipped: 0, failed: 0" in result.stdout
     update_log = latest_execution_log(tmp_path)
     assert "update stage started:" in update_log
     assert "stage=metadata" in update_log
     assert "stage=full_text" in update_log
     current = {paper.original_filename: paper for paper in list_papers(data_dir / "passagen.db")}
-    assert current["first.pdf"].status.value == "summarized"
+    assert current["first.pdf"].status.value == "outlined"
     assert current["second.pdf"].status.value == "discovered"
 
     result = runner.invoke(
@@ -269,9 +279,7 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "updated: 1, skipped: 1, failed: 0" in result.stdout
-    assert all(
-        paper.status.value == "summarized" for paper in list_papers(data_dir / "passagen.db")
-    )
+    assert all(paper.status.value == "outlined" for paper in list_papers(data_dir / "passagen.db"))
 
     result = runner.invoke(app, [*common, "update", "--force"])
 
@@ -301,7 +309,7 @@ def test_update_all_isolates_paper_failure(tmp_path: Path) -> None:
     assert "updated: 1, skipped: 0, failed: 1" in result.stdout
     current = {paper.original_filename: paper for paper in list_papers(data_dir / "passagen.db")}
     assert current["missing.pdf"].status.value == "discovered"
-    assert current["valid.pdf"].status.value == "summarized"
+    assert current["valid.pdf"].status.value == "outlined"
 
 
 def test_update_rejects_unknown_paper(tmp_path: Path) -> None:

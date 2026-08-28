@@ -55,7 +55,7 @@ passagen list                   # 查看论文和处理状态
 passagen show <paper-id>        # 查看元数据和产物路径
 ```
 
-`metadata` 用于显式执行或 `--force` 单篇元数据阶段。`update` 是幂等的阶段编排入口：指定 `paper-id` 时只推进该 Paper，省略时推进数据库中所有落后于当前开发前沿的 Paper，已达到或超过目标状态的记录直接跳过；传入 `--force` 时从 metadata 开始重新执行到当前开发前沿。批量中单篇失败不阻断其余记录，但命令最终返回非零状态。当前前沿是 `summarized`。
+`metadata` 用于显式执行或 `--force` 单篇元数据阶段。`update` 是幂等的阶段编排入口：指定 `paper-id` 时只推进该 Paper，省略时推进数据库中所有落后于当前开发前沿的 Paper，已达到或超过目标状态的记录直接跳过；传入 `--force` 时从 metadata 开始重新执行到当前开发前沿。批量中单篇失败不阻断其余记录，但命令最终返回非零状态。当前前沿是 `outlined`。
 
 `scan` 和处理流程保持分离，便于在调用外部服务前检查新论文。M7 的 `passagen run <directory>` 将组合 scan 与 update，形成从目录开始的完整入口。
 

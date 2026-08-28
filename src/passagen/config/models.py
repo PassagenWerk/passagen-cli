@@ -86,6 +86,12 @@ class SummarizationSettings(BaseModel):
     summary_max_output_tokens: int = Field(default=3_000, ge=100)
 
 
+class OutliningSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_output_tokens: int = Field(default=2_000, ge=100)
+
+
 class PipelineSettings(BaseModel):
     """Processing stage parameters, grouped by stage."""
 
@@ -94,6 +100,7 @@ class PipelineSettings(BaseModel):
     metadata: MetadataSettings = Field(default_factory=MetadataSettings)
     parsing: ParsingSettings = Field(default_factory=ParsingSettings)
     summarization: SummarizationSettings = Field(default_factory=SummarizationSettings)
+    outlining: OutliningSettings = Field(default_factory=OutliningSettings)
 
 
 class Settings(BaseSettings):
