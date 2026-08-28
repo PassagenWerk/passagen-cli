@@ -49,7 +49,7 @@ def parse_paper(
     settings: ParsingSettings,
     *,
     parser: ParserBackend | None = None,
-    refresh: bool = False,
+    force: bool = False,
     grobid: GrobidFulltextParser | None = None,
     pymupdf_parser: PaperParser | None = None,
     progress: ProgressCallback | None = None,
@@ -58,7 +58,7 @@ def parse_paper(
     if paper is None:
         raise PaperParsingError("paper_not_found", f"Paper not found: {paper_id}")
     existing = get_artifact(database_path, paper_id, EXTRACTED_ARTIFACT_KIND)
-    if paper.status not in {PaperStatus.METADATA_RESOLVED, PaperStatus.FAILED} and not refresh:
+    if paper.status not in {PaperStatus.METADATA_RESOLVED, PaperStatus.FAILED} and not force:
         if paper.status in {
             PaperStatus.PARSED,
             PaperStatus.SUMMARIZED,
@@ -149,25 +149,10 @@ def _run_parser(
 ) -> ParsedPaper:
     if backend is ParserBackend.PYMUPDF:
         return pymupdf_parser.parse(path)
-    if backend is ParserBackend.GROBID:
-        if not grobid.is_available():
-            raise ParsingError("grobid_unavailable", "GROBID health check failed")
-        return grobid.parse(path)
-    if grobid.is_available():
-        report_progress(progress, "GROBID is available; parsing TEI full text...")
-        try:
-            return grobid.parse(path)
-        except ParsingError as exc:
-            warning = f"GROBID failed ({exc.code}); falling back to PyMuPDF"
-            warnings.append(warning)
-            logger.warning("%s: %s", warning, exc)
-            report_progress(progress, warning + ".")
-    else:
-        warning = "GROBID is unavailable; falling back to PyMuPDF"
-        warnings.append(warning)
-        logger.warning(warning)
-        report_progress(progress, warning + ".")
-    return pymupdf_parser.parse(path)
+    if not grobid.is_available():
+        raise ParsingError("grobid_unavailable", "GROBID health check failed")
+    report_progress(progress, "GROBID is available; parsing TEI full text...")
+    return grobid.parse(path)
 
 
 def _atomic_write(path: Path, content: bytes) -> None:

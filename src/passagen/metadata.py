@@ -450,6 +450,13 @@ class GrobidClient:
         self.timeout_seconds = timeout_seconds
         self.client = client
 
+    def is_available(self) -> bool:
+        try:
+            response = self._get(f"{self.base_url}/api/isalive")
+            return response.is_success and response.text.strip().lower() == "true"
+        except httpx.HTTPError:
+            return False
+
     def extract(self, path: Path) -> BibliographicMetadata | None:
         try:
             with path.open("rb") as pdf_file:
@@ -479,6 +486,12 @@ class GrobidClient:
             return self.client.post(url, files=files, data=data)
         with httpx.Client(timeout=self.timeout_seconds, headers=_http_headers()) as client:
             return client.post(url, files=files, data=data)
+
+    def _get(self, url: str) -> httpx.Response:
+        if self.client is not None:
+            return self.client.get(url)
+        with httpx.Client(timeout=self.timeout_seconds, headers=_http_headers()) as client:
+            return client.get(url)
 
 
 def merge_metadata(*items: BibliographicMetadata) -> BibliographicMetadata:

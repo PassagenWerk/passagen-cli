@@ -156,8 +156,8 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 
 ### 交付物
 
-- `passagen metadata <paper-id> [--refresh]`
-- `passagen update [paper-id] [--refresh]`，将单篇或全部 Paper 推进到当前最新实现阶段，或刷新已有阶段
+- `passagen metadata <paper-id> [--force]`
+- `passagen update [paper-id] [--force]`，将单篇或全部 Paper 推进到当前最新实现阶段，或强制重建全部阶段
 - 轻量 PDF 标识提取器
 - GROBID header、Crossref 和 arXiv API 客户端
 - 字段来源与元数据持久化
@@ -202,6 +202,8 @@ v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
 - 对选定的单栏、双栏和 arXiv PDF 样本建立固定回归测试。
 
 ## M5：英文结构化摘要
+
+状态：已实现。
 
 ### 工作内容
 

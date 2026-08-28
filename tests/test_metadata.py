@@ -438,7 +438,7 @@ def test_resolve_metadata_uses_grobid_when_local_identity_is_incomplete(
         database_path,
         data_dir,
         paper.id,
-        MetadataSettings(grobid=GrobidSettings(enabled=True)),
+        MetadataSettings(grobid=GrobidSettings()),
         crossref=crossref,
         arxiv=FakeLookup(error="must not be called"),
         grobid=grobid,
@@ -476,7 +476,7 @@ def test_resolve_metadata_rejects_grobid_publisher_cover_identity(tmp_path: Path
         database_path,
         data_dir,
         paper.id,
-        MetadataSettings(grobid=GrobidSettings(enabled=True)),
+        MetadataSettings(grobid=GrobidSettings()),
         crossref=crossref,
         arxiv=FakeLookup(error="must not be called"),
         grobid=FakePdfLookup(
@@ -549,7 +549,7 @@ def test_resolve_metadata_uses_grobid_to_recover_crossref_conflict(tmp_path: Pat
             database_path,
             data_dir,
             paper.id,
-            MetadataSettings(grobid=GrobidSettings(enabled=True)),
+            MetadataSettings(grobid=GrobidSettings()),
             crossref=crossref,
             arxiv=FakeLookup(error="must not be called"),
             grobid=grobid,
@@ -594,7 +594,7 @@ def test_resolve_metadata_continues_when_grobid_fails(tmp_path: Path) -> None:
         database_path,
         data_dir,
         paper.id,
-        MetadataSettings(grobid=GrobidSettings(enabled=True)),
+        MetadataSettings(grobid=GrobidSettings()),
         crossref=FakeLookup(error="must not be called"),
         arxiv=FakeLookup(error="must not be called"),
         grobid=FakePdfLookup(error="GROBID unavailable"),
@@ -649,6 +649,7 @@ def test_resolve_metadata_queries_both_providers_and_persists_sources(tmp_path: 
         MetadataSettings(),
         crossref=crossref,
         arxiv=arxiv,
+        grobid=FakePdfLookup(),
     )
 
     assert result.paper.status is PaperStatus.METADATA_RESOLVED
@@ -687,11 +688,14 @@ def test_resolve_metadata_rejects_crossref_title_mismatch(tmp_path: Path) -> Non
             )
         ),
         arxiv=FakeLookup(error="must not be called"),
+        grobid=FakePdfLookup(),
     )
 
     assert result.paper.title == "VeriLucid Paper"
     assert result.paper.metadata_sources["title"] == "pdf"
+    assert paper.managed_pdf_path is not None
     assert result.warnings == (
+        f"GROBID did not extract metadata from {paper.managed_pdf_path.name}",
         "Crossref title does not match PDF title for 10.1145/3789240; ignoring response",
     )
 
@@ -714,6 +718,7 @@ def test_resolve_metadata_continues_when_api_fails(tmp_path: Path) -> None:
         MetadataSettings(),
         crossref=FakeLookup(error="Crossref unavailable"),
         arxiv=FakeLookup(error="must not be called"),
+        grobid=FakePdfLookup(),
     )
 
     assert result.paper.status is PaperStatus.METADATA_RESOLVED
@@ -743,6 +748,7 @@ def test_resolve_metadata_without_identifiers_does_not_call_api(tmp_path: Path) 
         MetadataSettings(),
         crossref=crossref,
         arxiv=arxiv,
+        grobid=FakePdfLookup(),
     )
     second = resolve_paper_metadata(
         database_path,

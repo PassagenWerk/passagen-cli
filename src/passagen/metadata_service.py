@@ -47,7 +47,7 @@ def resolve_paper_metadata(
     paper_id: str,
     settings: MetadataSettings,
     *,
-    refresh: bool = False,
+    force: bool = False,
     crossref: MetadataLookup | None = None,
     arxiv: MetadataLookup | None = None,
     grobid: PdfMetadataLookup | None = None,
@@ -58,13 +58,13 @@ def resolve_paper_metadata(
         logger.error("metadata failed: paper not found: paper_id=%s", paper_id)
         raise MetadataResolutionError(f"Paper not found: {paper_id}")
     logger.info(
-        "metadata started: paper_id=%s status=%s refresh=%s filename=%s",
+        "metadata started: paper_id=%s status=%s force=%s filename=%s",
         paper.id,
         paper.status.value,
-        refresh,
+        force,
         paper.original_filename,
     )
-    if paper.status not in {PaperStatus.DISCOVERED, PaperStatus.FAILED} and not refresh:
+    if paper.status not in {PaperStatus.DISCOVERED, PaperStatus.FAILED} and not force:
         logger.info(
             "metadata skipped: paper_id=%s status=%s reason=already_resolved",
             paper.id,
@@ -110,7 +110,9 @@ def resolve_paper_metadata(
     )
     grobid_attempted = False
     grobid_metadata = BibliographicMetadata()
-    if settings.grobid.enabled and _needs_grobid(local):
+    if _needs_grobid(local):
+        if isinstance(grobid_client, GrobidClient) and not grobid_client.is_available():
+            raise MetadataResolutionError("GROBID health check failed")
         fallback_reason = _grobid_reason(local)
         logger.info(
             "metadata fallback selected: paper_id=%s provider=GROBID reason=%s",
@@ -121,12 +123,6 @@ def resolve_paper_metadata(
         extracted = _extract_grobid(pdf_path, grobid_client, warnings, progress)
         grobid_metadata = _initial_grobid_fallback(local, extracted, warnings, progress)
         grobid_attempted = True
-    elif not settings.grobid.enabled:
-        logger.info(
-            "metadata fallback unavailable: paper_id=%s provider=GROBID reason=disabled",
-            paper.id,
-        )
-
     candidate = merge_metadata(local, grobid_metadata)
     crossref_client = crossref or CrossrefClient(
         base_url=settings.crossref.base_url,
@@ -143,11 +139,7 @@ def resolve_paper_metadata(
         progress=progress,
     )
 
-    if (
-        not _titles_match(candidate.title, crossref_metadata.title)
-        and settings.grobid.enabled
-        and not grobid_attempted
-    ):
+    if not _titles_match(candidate.title, crossref_metadata.title) and not grobid_attempted:
         logger.warning(
             "metadata Crossref title conflict: paper_id=%s doi=%s; trying GROBID fallback",
             paper.id,

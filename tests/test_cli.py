@@ -5,6 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 from passagen.cli import app
+from passagen.llm import LlmResponse
 from passagen.repository import list_papers
 
 runner = CliRunner()
@@ -16,6 +17,21 @@ def isolate_cli_working_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "passagen.summarization.OpenAICompatibleProvider",
+        lambda _settings: _FakeLlmProvider(),
+    )
+    monkeypatch.setattr("passagen.metadata.GrobidClient.is_available", lambda _client: True)
+
+
+class _FakeLlmProvider:
+    provider_name = "fake"
+    model = "test-model"
+
+    def generate(self, prompt: str) -> LlmResponse:
+        if "Extract factual notes" in prompt:
+            return LlmResponse('{"facts": []}')
+        return LlmResponse('{"identity": {"title": "Test", "authors": [], "tags": []}}')
 
 
 def write_metadata_pdf(path: Path, title: str, text: str = "Paper body") -> None:
@@ -209,20 +225,21 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
     result = runner.invoke(app, [*common, "update", papers["first.pdf"].id])
 
     assert result.exit_code == 0
-    assert "Paper 1/1 [stage 1/2: metadata]" in result.stdout
-    assert "Paper 1/1 [stage 2/2: full text]" in result.stdout
+    assert "Paper 1/1 [stage 1/3: metadata]" in result.stdout
+    assert "Paper 1/1 [stage 2/3: full text]" in result.stdout
+    assert "Paper 1/1 [stage 3/3: summary]" in result.stdout
     assert "updated: 1, skipped: 0, failed: 0" in result.stdout
     update_log = (tmp_path / "logs" / "latest").read_text(encoding="utf-8")
     assert "update stage started:" in update_log
     assert "stage=metadata" in update_log
     assert "stage=full_text" in update_log
     current = {paper.original_filename: paper for paper in list_papers(data_dir / "passagen.db")}
-    assert current["first.pdf"].status.value == "parsed"
+    assert current["first.pdf"].status.value == "summarized"
     assert current["second.pdf"].status.value == "discovered"
 
     result = runner.invoke(
         app,
-        [*common, "update", papers["first.pdf"].id, "--refresh"],
+        [*common, "update", papers["first.pdf"].id, "--force"],
     )
 
     assert result.exit_code == 0
@@ -232,9 +249,11 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "updated: 1, skipped: 1, failed: 0" in result.stdout
-    assert all(paper.status.value == "parsed" for paper in list_papers(data_dir / "passagen.db"))
+    assert all(
+        paper.status.value == "summarized" for paper in list_papers(data_dir / "passagen.db")
+    )
 
-    result = runner.invoke(app, [*common, "update", "--refresh"])
+    result = runner.invoke(app, [*common, "update", "--force"])
 
     assert result.exit_code == 0
     assert "updated: 2, skipped: 0, failed: 0" in result.stdout
@@ -262,7 +281,7 @@ def test_update_all_isolates_paper_failure(tmp_path: Path) -> None:
     assert "updated: 1, skipped: 0, failed: 1" in result.stdout
     current = {paper.original_filename: paper for paper in list_papers(data_dir / "passagen.db")}
     assert current["missing.pdf"].status.value == "discovered"
-    assert current["valid.pdf"].status.value == "parsed"
+    assert current["valid.pdf"].status.value == "summarized"
 
 
 def test_update_rejects_unknown_paper(tmp_path: Path) -> None:
@@ -317,6 +336,5 @@ def test_scan_and_metadata_write_detailed_execution_logs(
     assert "metadata local extraction succeeded:" in metadata_log
     assert "metadata route skipped: provider=Crossref reason=disabled" in metadata_log
     assert "metadata route skipped: provider=arXiv reason=disabled" in metadata_log
-    assert "metadata fallback unavailable:" in metadata_log
     assert "metadata finished:" in metadata_log
     assert len(list((tmp_path / "logs").glob("*.txt"))) == 2

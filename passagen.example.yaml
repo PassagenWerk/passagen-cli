@@ -14,7 +14,6 @@ metadata:
     enabled: true
     base_url: https://export.arxiv.org
   grobid:
-    enabled: false
     base_url: http://localhost:8070
 
 parsing:
@@ -22,3 +21,10 @@ parsing:
   grobid_base_url: http://localhost:8070
   timeout_seconds: 60
   min_text_characters: 10
+
+llm:
+  base_url: https://api.openai.com/v1
+  model: gpt-4o-mini
+  api_key_env: PASSAGEN_API_KEY
+  timeout_seconds: 120
+  max_chunk_characters: 12000

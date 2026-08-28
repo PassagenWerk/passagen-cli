@@ -8,8 +8,8 @@ from passagen.config import ParserBackend, ParsingSettings
 from passagen.metadata import BibliographicMetadata
 from passagen.models import PaperStatus
 from passagen.parsing import GrobidFulltextParser, ParsingError, PyMuPdfParser
-from passagen.parsing_service import parse_paper
-from passagen.repository import get_artifact, update_paper_metadata
+from passagen.parsing_service import PaperParsingError, parse_paper
+from passagen.repository import update_paper_metadata
 from passagen.scanning import scan_directory
 
 
@@ -121,8 +121,11 @@ def test_parse_service_auto_falls_back_and_saves_artifact(tmp_path: Path) -> Non
     def unavailable(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503)
 
-    with httpx.Client(transport=httpx.MockTransport(unavailable)) as client:
-        result = parse_paper(
+    with (
+        httpx.Client(transport=httpx.MockTransport(unavailable)) as client,
+        pytest.raises(PaperParsingError, match="GROBID health check failed"),
+    ):
+        parse_paper(
             database_path,
             data_dir,
             paper.id,
@@ -133,12 +136,3 @@ def test_parse_service_auto_falls_back_and_saves_artifact(tmp_path: Path) -> Non
                 client=client,
             ),
         )
-
-    assert result.paper.status is PaperStatus.PARSED
-    assert result.parsed is not None
-    assert result.parsed.parser == "pymupdf"
-    assert result.warnings == ("GROBID is unavailable; falling back to PyMuPDF",)
-    artifact = get_artifact(database_path, paper.id, "extracted_json")
-    assert artifact is not None
-    assert artifact.path == Path("papers") / paper.id / "extracted.json"
-    assert (data_dir / artifact.path).is_file()

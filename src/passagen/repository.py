@@ -234,6 +234,153 @@ def save_parsed_artifact(
     return _paper_record(paper_row), _artifact_record(artifact_row)
 
 
+def save_summary_artifacts(
+    database_path: Path,
+    paper_id: str,
+    json_path: Path,
+    yaml_path: Path,
+    *,
+    version: str,
+    json_sha256: str,
+    json_size_bytes: int,
+    yaml_sha256: str,
+    yaml_size_bytes: int,
+) -> tuple[PaperRecord, ArtifactRecord]:
+    _require_database(database_path)
+    with connect_database(database_path) as connection:
+        summary_artifact = _upsert_artifact(
+            connection,
+            paper_id,
+            "summary_json",
+            json_path,
+            version,
+            json_sha256,
+            json_size_bytes,
+        )
+        _upsert_artifact(
+            connection,
+            paper_id,
+            "summary_yaml",
+            yaml_path,
+            version,
+            yaml_sha256,
+            yaml_size_bytes,
+        )
+        cursor = connection.execute(
+            "UPDATE papers SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (PaperStatus.SUMMARIZED.value, paper_id),
+        )
+        if cursor.rowcount != 1:
+            raise KeyError(paper_id)
+        paper_row = _select_paper(connection, "p.id = ?", (paper_id,))
+    if paper_row is None:
+        raise RuntimeError(f"Failed to reload summary artifact for {paper_id}")
+    return _paper_record(paper_row), summary_artifact
+
+
+def start_processing_run(database_path: Path, paper_id: str, stage: str) -> str:
+    _require_database(database_path)
+    run_id = str(uuid.uuid4())
+    with connect_database(database_path) as connection:
+        connection.execute(
+            "INSERT INTO processing_runs (id, paper_id, stage, status) VALUES (?, ?, ?, 'running')",
+            (run_id, paper_id, stage),
+        )
+    return run_id
+
+
+def finish_processing_run(
+    database_path: Path,
+    run_id: str,
+    *,
+    error_message: str | None = None,
+) -> None:
+    with connect_database(database_path) as connection:
+        connection.execute(
+            "UPDATE processing_runs SET status = ?, error_message = ?, "
+            "finished_at = CURRENT_TIMESTAMP "
+            "WHERE id = ?",
+            ("failed" if error_message else "completed", error_message, run_id),
+        )
+
+
+def update_paper_status(database_path: Path, paper_id: str, status: PaperStatus) -> None:
+    _require_database(database_path)
+    with connect_database(database_path) as connection:
+        cursor = connection.execute(
+            "UPDATE papers SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status.value, paper_id),
+        )
+        if cursor.rowcount != 1:
+            raise KeyError(paper_id)
+
+
+def record_llm_call(
+    database_path: Path,
+    processing_run_id: str,
+    *,
+    provider: str,
+    model: str,
+    prompt_version: str,
+    schema_version: str,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    error_message: str | None = None,
+) -> None:
+    with connect_database(database_path) as connection:
+        connection.execute(
+            "INSERT INTO llm_calls (id, processing_run_id, provider, model, prompt_version, "
+            "schema_version, input_tokens, output_tokens, error_message) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                str(uuid.uuid4()),
+                processing_run_id,
+                provider,
+                model,
+                prompt_version,
+                schema_version,
+                input_tokens,
+                output_tokens,
+                error_message,
+            ),
+        )
+
+
+def _upsert_artifact(
+    connection: sqlite3.Connection,
+    paper_id: str,
+    kind: str,
+    path: Path,
+    version: str,
+    sha256: str,
+    size_bytes: int,
+) -> ArtifactRecord:
+    row = connection.execute(
+        "SELECT id FROM artifacts WHERE paper_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 1",
+        (paper_id, kind),
+    ).fetchone()
+    artifact_id = str(row["id"]) if row is not None else str(uuid.uuid4())
+    if row is None:
+        connection.execute(
+            "INSERT INTO artifacts (id, paper_id, kind, path, version, sha256, size_bytes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (artifact_id, paper_id, kind, path.as_posix(), version, sha256, size_bytes),
+        )
+    else:
+        connection.execute(
+            "UPDATE artifacts SET path = ?, version = ?, sha256 = ?, size_bytes = ?, "
+            "created_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (path.as_posix(), version, sha256, size_bytes, artifact_id),
+        )
+    artifact_row = connection.execute(
+        "SELECT id, paper_id, kind, path, version, sha256, size_bytes FROM artifacts WHERE id = ?",
+        (artifact_id,),
+    ).fetchone()
+    if artifact_row is None:
+        raise RuntimeError(f"Failed to reload {kind} artifact for {paper_id}")
+    return _artifact_record(artifact_row)
+
+
 def managed_path_is_referenced(database_path: Path, managed_path: Path) -> bool:
     if not database_path.exists():
         return False

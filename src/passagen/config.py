@@ -31,7 +31,6 @@ class ArxivSettings(BaseModel):
 class GrobidSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = False
     base_url: str = "http://localhost:8070"
 
 
@@ -60,6 +59,16 @@ class ParsingSettings(BaseModel):
     min_text_characters: int = Field(default=10, ge=1)
 
 
+class LlmSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str = "https://api.openai.com/v1"
+    model: str = "gpt-4o-mini"
+    api_key_env: str = "PASSAGEN_API_KEY"
+    timeout_seconds: float = Field(default=120.0, gt=0)
+    max_chunk_characters: int = Field(default=12_000, ge=1_000)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix=ENV_PREFIX,
@@ -72,6 +81,7 @@ class Settings(BaseSettings):
     debug: bool = False
     metadata: MetadataSettings = Field(default_factory=MetadataSettings)
     parsing: ParsingSettings = Field(default_factory=ParsingSettings)
+    llm: LlmSettings = Field(default_factory=LlmSettings)
 
     @property
     def resolved_data_dir(self) -> Path:
@@ -119,7 +129,7 @@ def _read_config(path: Path) -> dict[str, Any]:
     if "passagen" not in document:
         return document
 
-    unknown_sections = set(document) - {"passagen", "metadata", "parsing"}
+    unknown_sections = set(document) - {"passagen", "metadata", "parsing", "llm"}
     if unknown_sections:
         names = ", ".join(sorted(str(name) for name in unknown_sections))
         raise ConfigError(f"Config {path} contains unknown sections: {names}")
@@ -132,6 +142,8 @@ def _read_config(path: Path) -> dict[str, Any]:
         values["metadata"] = document["metadata"]
     if "parsing" in document:
         values["parsing"] = document["parsing"]
+    if "llm" in document:
+        values["llm"] = document["llm"]
     return values
 
 

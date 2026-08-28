@@ -24,11 +24,8 @@ from passagen.repository import (
     list_papers,
 )
 from passagen.scanning import ScanDirectoryError, scan_directory
-from passagen.updating import (
-    LATEST_IMPLEMENTED_STATUS,
-    UpdateTargetError,
-    update_papers,
-)
+from passagen.summarization import SummaryError, summarize_paper
+from passagen.updating import UpdateTargetError, update_papers
 
 app = typer.Typer(help="Manage paper PDFs and generate structured summaries.")
 config_app = typer.Typer(help="Inspect Passagen configuration.")
@@ -120,6 +117,8 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row("metadata.crossref", str(settings.metadata.crossref.enabled).lower())
     table.add_row("metadata.arxiv", str(settings.metadata.arxiv.enabled).lower())
     table.add_row("parsing.parser", settings.parsing.parser.value)
+    table.add_row("llm.base_url", settings.llm.base_url)
+    table.add_row("llm.model", settings.llm.model)
     console.print(table)
 
 
@@ -213,7 +212,7 @@ def list_command(
 def metadata_command(
     ctx: typer.Context,
     paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
-    refresh: Annotated[bool, typer.Option(help="Refresh already resolved metadata.")] = False,
+    force: Annotated[bool, typer.Option(help="Rebuild existing metadata.")] = False,
 ) -> None:
     settings = _state(ctx).settings
     try:
@@ -223,7 +222,7 @@ def metadata_command(
                 settings.resolved_data_dir,
                 paper_id,
                 settings.metadata,
-                refresh=refresh,
+                force=force,
                 progress=progress.update,
             )
     except (DatabaseNotInitializedError, MetadataResolutionError) as exc:
@@ -236,7 +235,7 @@ def metadata_command(
     if result.updated:
         console.print(f"Metadata resolved for {paper_id}.")
     else:
-        console.print(f"Metadata already resolved for {paper_id}; use --refresh to update.")
+        console.print(f"Metadata already resolved for {paper_id}; use --force to rebuild.")
 
 
 @app.command("update")
@@ -246,9 +245,9 @@ def update_command(
         str | None,
         typer.Argument(help="Paper ID. Omit to update every paper."),
     ] = None,
-    refresh: Annotated[
+    force: Annotated[
         bool,
-        typer.Option(help="Refresh already completed stages."),
+        typer.Option(help="Rebuild every stage from metadata to the current target."),
     ] = False,
 ) -> None:
     settings = _state(ctx).settings
@@ -260,7 +259,8 @@ def update_command(
                 settings.metadata,
                 settings.parsing,
                 paper_id,
-                refresh=refresh,
+                llm_settings=settings.llm,
+                force=force,
                 progress=progress.update,
             )
     except (DatabaseNotInitializedError, UpdateTargetError) as exc:
@@ -284,7 +284,7 @@ def update_command(
             highlight=False,
         )
     console.print(
-        f"Target: {LATEST_IMPLEMENTED_STATUS.value}; "
+        f"Target: {result.target_status.value}; "
         f"updated: {len(result.updated)}, "
         f"skipped: {len(result.skipped)}, "
         f"failed: {len(result.failures)}"
@@ -301,7 +301,7 @@ def parse_command(
         ParserBackend | None,
         typer.Option(help="Parser backend: auto, grobid, or pymupdf."),
     ] = None,
-    refresh: Annotated[bool, typer.Option(help="Rebuild an existing extracted artifact.")] = False,
+    force: Annotated[bool, typer.Option(help="Rebuild an existing extracted artifact.")] = False,
 ) -> None:
     settings = _state(ctx).settings
     try:
@@ -312,7 +312,7 @@ def parse_command(
                 paper_id,
                 settings.parsing,
                 parser=parser,
-                refresh=refresh,
+                force=force,
                 progress=progress.update,
             )
     except (DatabaseNotInitializedError, PaperParsingError) as exc:
@@ -329,7 +329,37 @@ def parse_command(
             markup=False,
         )
     else:
-        console.print(f"Paper {paper_id} is already parsed; use --refresh to rebuild.")
+        console.print(f"Paper {paper_id} is already parsed; use --force to rebuild.")
+
+
+@app.command("summarize")
+def summarize_command(
+    ctx: typer.Context,
+    paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
+    force: Annotated[bool, typer.Option(help="Rebuild an existing summary.")] = False,
+) -> None:
+    settings = _state(ctx).settings
+    try:
+        with ConsoleProgress(console, f"Summarizing {paper_id}...") as progress:
+            result = summarize_paper(
+                settings.resolved_database_path,
+                settings.resolved_data_dir,
+                paper_id,
+                settings.llm,
+                force=force,
+                progress=progress.update,
+            )
+    except (DatabaseNotInitializedError, SummaryError) as exc:
+        logger.error("summarize command failed: paper_id=%s error=%s", paper_id, exc)
+        console.print(f"[red]Summary error:[/red] {exc}", highlight=False)
+        raise typer.Exit(code=1) from exc
+    if result.updated and result.artifact is not None and result.summary is not None:
+        console.print(
+            f"Structured summary saved for {paper_id}; artifact={result.artifact.path}",
+            markup=False,
+        )
+    else:
+        console.print(f"Paper {paper_id} is already summarized; use --force to rebuild.")
 
 
 @app.command("show")

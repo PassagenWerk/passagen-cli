@@ -47,14 +47,15 @@ discovered -> metadata_resolved -> parsed -> summarized -> outlined -> completed
 ```bash
 passagen scan <directory>       # 扫描目录并登记新 PDF
 passagen metadata <paper-id>    # 识别标识并补全基础元数据
-passagen update [paper-id] [--refresh]  # 推进指定或全部论文；可刷新已有阶段
+passagen update [paper-id] [--force]    # 推进指定或全部论文；强制重建全部阶段
+passagen summarize <paper-id> [--force] # 生成经过 Schema 校验的英文结构化摘要
 passagen process [paper-id]     # 处理全部待处理论文或指定论文
 passagen retry [paper-id]       # 重试失败任务
 passagen list                   # 查看论文和处理状态
 passagen show <paper-id>        # 查看元数据和产物路径
 ```
 
-`metadata` 用于显式执行或 `--refresh` 单篇元数据阶段。`update` 是幂等的阶段编排入口：指定 `paper-id` 时只推进该 Paper，省略时推进数据库中所有落后于当前开发前沿的 Paper，已达到或超过目标状态的记录直接跳过；传入 `--refresh` 时重新执行已有阶段，同时保留 Paper 当前状态。批量中单篇失败不阻断其余记录，但命令最终返回非零状态。当前前沿是 `metadata_resolved`，实现 M4 后将扩展到 `parsed`，不改变命令接口。
+`metadata` 用于显式执行或 `--force` 单篇元数据阶段。`update` 是幂等的阶段编排入口：指定 `paper-id` 时只推进该 Paper，省略时推进数据库中所有落后于当前开发前沿的 Paper，已达到或超过目标状态的记录直接跳过；传入 `--force` 时从 metadata 开始重新执行到当前开发前沿。批量中单篇失败不阻断其余记录，但命令最终返回非零状态。当前前沿是 `summarized`。
 
 `scan` 和处理流程保持分离，便于在调用外部服务前检查新论文。M7 的 `passagen run <directory>` 将组合 scan 与 update，形成从目录开始的完整入口。
 
@@ -309,16 +310,21 @@ metadata:
     enabled: true
     base_url: https://export.arxiv.org
   grobid:
-    enabled: false
     base_url: http://localhost:8070
 parsing:
   parser: auto
   grobid_base_url: http://localhost:8070
   timeout_seconds: 60
   min_text_characters: 10
+llm:
+  base_url: https://api.openai.com/v1
+  model: gpt-4o-mini
+  api_key_env: PASSAGEN_API_KEY
+  timeout_seconds: 120
+  max_chunk_characters: 12000
 ```
 
-启用 `metadata.grobid.enabled` 前需单独启动 GROBID 服务，并确保 `base_url` 下的 `/api/processHeaderDocument` 可访问。Passagen 不负责启动或管理 GROBID 进程；默认关闭，因此现有本地与 Crossref/arXiv 流程不增加服务依赖。
+执行需要 GROBID 的 metadata fallback 或 `auto`/`grobid` 解析前，Passagen 会检查服务健康状态。执行摘要前会检查 LLM API key 配置；不执行对应阶段时不检查这些依赖。缺少必需依赖时该阶段以明确错误失败。
 
 配置文件使用 `yaml.safe_load` 解析。根节点和各配置分区必须是 mapping，不允许使用可执行 Python tag。当前接受 `passagen` 和 `metadata` 分区；后续实现 LLM、parser 和 pipeline 时再增加对应顶层分区，避免把所有字段堆入 `passagen`。
 

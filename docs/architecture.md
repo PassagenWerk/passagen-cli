@@ -22,6 +22,8 @@
 | `src/passagen/parsing.py` | ParsedPaper contract、GROBID fulltext 与 PyMuPDF parser |
 | `src/passagen/parsing_service.py` | parser 选择、自动降级、extracted artifact 和状态推进 |
 | `src/passagen/updating.py` | 单篇/全量 Paper 的当前开发前沿推进与失败隔离 |
+| `src/passagen/llm.py` | OpenAI-compatible LLM adapter 与统一响应 contract |
+| `src/passagen/summarization.py` | 章节分块、摘要 Schema、校验/修复与摘要 artifact 持久化 |
 
 这些模块在职责仍然紧凑时可以保持不拆分。后续里程碑引入解析、metadata、LLM 和 pipeline 后，再按本文定义的边界演进；不要为了匹配目标目录预先创建空包。
 
@@ -145,7 +147,7 @@ Pipeline 与 Denkbild 的 compiler pipeline 保持相同职责边界：只决定
 
 Pipeline 不应把所有中间对象堆成一个不断扩张的 context 字段集合。跨阶段结果通过数据库记录和有类型的 artifact reference 传递；仅一次运行需要的依赖可以放在轻量 context 中。
 
-`update [paper-id] [--refresh]` 是当前 pipeline 的稳定用户入口。`LATEST_IMPLEMENTED_STATUS` 声明开发前沿；每增加一个已交付阶段，orchestration 追加从现有状态到该前沿的步骤。省略 ID 时读取全部 Paper，每篇独立推进并汇总 updated、skipped、warning 和 failure，不能因单篇失败中止整个批次。`--refresh` 重新执行已实现阶段，并保留已超过该阶段的 Paper 状态。
+`update [paper-id] [--force]` 是当前 pipeline 的稳定用户入口。`LATEST_IMPLEMENTED_STATUS` 声明开发前沿；每增加一个已交付阶段，orchestration 追加从现有状态到该前沿的步骤。省略 ID 时读取全部 Paper，每篇独立推进并汇总 updated、skipped、warning 和 failure，不能因单篇失败中止整个批次。`--force` 从 metadata 起重新执行至当前前沿。
 
 ## 持久化与事务
 
