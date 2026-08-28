@@ -93,6 +93,35 @@ def test_help() -> None:
 
     assert result.exit_code == 0
     assert "Manage paper PDFs" in result.stdout
+    assert "Import PDFs from a directory" in result.stdout
+    assert "Resume one or all papers" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("arguments", "description"),
+    [
+        (["config", "check", "--help"], "Validate configuration and prompt templates"),
+        (["db", "init", "--help"], "Initialize the SQLite database"),
+        (["db", "status", "--help"], "Show the current database schema version"),
+        (["db", "backup", "--help"], "Create a consistent SQLite backup"),
+        (["logs", "clean", "--help"], "Move historical execution logs"),
+        (["artifacts", "check", "--help"], "Verify paths, file sizes"),
+        (["scan", "--help"], "Import PDFs from a directory"),
+        (["run", "--help"], "advance all pending papers"),
+        (["list", "--help"], "List papers"),
+        (["metadata", "--help"], "Extract local PDF metadata"),
+        (["update", "--help"], "last successful stage"),
+        (["parse", "--help"], "Parse full text into extracted.json"),
+        (["summarize", "--help"], "Structured Summary v2"),
+        (["outline", "--help"], "hierarchical English technical outline"),
+        (["show", "--help"], "Show paper metadata"),
+    ],
+)
+def test_command_help_includes_description(arguments: list[str], description: str) -> None:
+    result = runner.invoke(app, arguments)
+
+    assert result.exit_code == 0
+    assert description in result.stdout
 
 
 def test_database_init_uses_current_directory_by_default(

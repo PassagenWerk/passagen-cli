@@ -41,11 +41,11 @@ from passagen.stages.scanning import ScanDirectoryError, scan_directory
 from passagen.stages.summarization import SummaryError, summarize_paper
 from passagen.stages.updating import UpdateTargetError, update_papers
 
-app = typer.Typer(help="Manage paper PDFs and generate structured summaries.")
-config_app = typer.Typer(help="Inspect Passagen configuration.")
-db_app = typer.Typer(help="Manage the Passagen database.")
+app = typer.Typer(help="Manage paper PDFs and generate validated English research artifacts.")
+config_app = typer.Typer(help="Inspect Passagen configuration and prompt templates.")
+db_app = typer.Typer(help="Initialize, inspect, and back up the Passagen database.")
 logs_app = typer.Typer(help="Manage Passagen execution logs.")
-artifacts_app = typer.Typer(help="Inspect managed artifacts.")
+artifacts_app = typer.Typer(help="Verify the integrity of managed artifacts.")
 app.add_typer(config_app, name="config")
 app.add_typer(db_app, name="db")
 app.add_typer(logs_app, name="logs")
@@ -143,7 +143,10 @@ def main(
     ctx.obj = AppState(settings, execution_log_dir, provider_health)
 
 
-@config_app.command("check")
+@config_app.command(
+    "check",
+    help="Validate configuration and prompt templates, then show effective settings.",
+)
 def config_check(ctx: typer.Context) -> None:
     settings = _state(ctx).settings
     logger.info("config check started")
@@ -195,7 +198,7 @@ def config_check(ctx: typer.Context) -> None:
     console.print(table)
 
 
-@db_app.command("init")
+@db_app.command("init", help="Initialize the SQLite database without clearing existing data.")
 def db_init(ctx: typer.Context) -> None:
     database_path = _state(ctx).settings.resolved_database_path
     initialize_database(database_path)
@@ -203,7 +206,7 @@ def db_init(ctx: typer.Context) -> None:
     console.print("Database initialized.")
 
 
-@db_app.command("status")
+@db_app.command("status", help="Show the current database schema version and initialization state.")
 def db_status(ctx: typer.Context) -> None:
     database_path = _state(ctx).settings.resolved_database_path
     version = current_version(database_path)
@@ -215,7 +218,10 @@ def db_status(ctx: typer.Context) -> None:
     console.print(f"Database schema version: {version}")
 
 
-@db_app.command("backup")
+@db_app.command(
+    "backup",
+    help="Create a consistent SQLite backup; managed artifact files are not copied.",
+)
 def db_backup(
     ctx: typer.Context,
     destination: Annotated[
@@ -243,14 +249,20 @@ def db_backup(
     console.print(f"Database backup created: {backup}", markup=False)
 
 
-@logs_app.command("clean")
+@logs_app.command(
+    "clean",
+    help="Move historical execution logs, except the current run, to logs/old.",
+)
 def logs_clean(ctx: typer.Context) -> None:
     state = _state(ctx)
     moved = archive_execution_logs(exclude=(state.execution_log_dir,))
     console.print(f"Archived {len(moved)} execution log(s) to logs/old.")
 
 
-@artifacts_app.command("check")
+@artifacts_app.command(
+    "check",
+    help="Verify paths, file sizes, and SHA-256 hashes of registered artifacts.",
+)
 def artifacts_check(ctx: typer.Context) -> None:
     settings = _state(ctx).settings
     try:
@@ -269,7 +281,10 @@ def artifacts_check(ctx: typer.Context) -> None:
         raise typer.Exit(code=1)
 
 
-@app.command("scan")
+@app.command(
+    "scan",
+    help="Import PDFs from a directory into managed storage with SHA-256 deduplication.",
+)
 def scan(
     ctx: typer.Context,
     directory: Annotated[Path, typer.Argument(help="Directory containing PDF files.")],
@@ -307,7 +322,10 @@ def scan(
         raise typer.Exit(code=1)
 
 
-@app.command("run")
+@app.command(
+    "run",
+    help="Scan a directory and advance all pending papers to the outlined state.",
+)
 def run_command(
     ctx: typer.Context,
     directory: Annotated[Path, typer.Argument(help="Directory containing PDF files.")],
@@ -352,7 +370,7 @@ def run_command(
         raise typer.Exit(code=1)
 
 
-@app.command("list")
+@app.command("list", help="List papers, optionally filtered by their last successful stage.")
 def list_command(
     ctx: typer.Context,
     status: Annotated[PaperStatus | None, typer.Option(help="Filter by paper status.")] = None,
@@ -380,7 +398,10 @@ def list_command(
     console.print(table)
 
 
-@app.command("metadata")
+@app.command(
+    "metadata",
+    help="Extract local PDF metadata and enrich it with configured metadata providers.",
+)
 def metadata_command(
     ctx: typer.Context,
     paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
@@ -412,7 +433,12 @@ def metadata_command(
         console.print(f"Metadata already resolved for {paper_id}; use --force to rebuild.")
 
 
-@app.command("update")
+@app.command(
+    "update",
+    help=(
+        "Resume one or all papers from their last successful stage; --force rebuilds from metadata."
+    ),
+)
 def update_command(
     ctx: typer.Context,
     paper_id: Annotated[
@@ -468,7 +494,10 @@ def update_command(
         raise typer.Exit(code=1)
 
 
-@app.command("parse")
+@app.command(
+    "parse",
+    help="Parse full text into extracted.json with GROBID, PyMuPDF, or automatic selection.",
+)
 def parse_command(
     ctx: typer.Context,
     paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
@@ -509,7 +538,10 @@ def parse_command(
         console.print(f"Paper {paper_id} is already parsed; use --force to rebuild.")
 
 
-@app.command("summarize")
+@app.command(
+    "summarize",
+    help="Generate and validate the general English Structured Summary v2.",
+)
 def summarize_command(
     ctx: typer.Context,
     paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
@@ -542,7 +574,10 @@ def summarize_command(
         console.print(f"Paper {paper_id} is already summarized; use --force to rebuild.")
 
 
-@app.command("outline")
+@app.command(
+    "outline",
+    help="Generate a hierarchical English technical outline from validated summary.json only.",
+)
 def outline_command(
     ctx: typer.Context,
     paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
@@ -576,7 +611,7 @@ def outline_command(
         console.print(f"Paper {paper_id} is already outlined; use --force to rebuild.")
 
 
-@app.command("show")
+@app.command("show", help="Show paper metadata, last successful stage, and managed artifact paths.")
 def show(ctx: typer.Context, paper_id: Annotated[str, typer.Argument(help="Paper ID.")]) -> None:
     settings = _state(ctx).settings
     try:

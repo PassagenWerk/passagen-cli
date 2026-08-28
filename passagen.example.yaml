@@ -15,13 +15,17 @@ providers:
     base_url: https://export.arxiv.org
     timeout_seconds: 10
   grobid:
+    # GROBID service root; health endpoint is /api/isalive
     base_url: http://localhost:8070
     timeout_seconds: 60
   llm:
+    # OpenAI-compatible API prefix; Passagen appends /chat/completions
     base_url: https://api.openai.com/v1
     model: gpt-4o-mini
+    # The secret value is read from this environment variable, never from YAML
     api_key_env: PASSAGEN_API_KEY
     timeout_seconds: 120
+    # Enable for reasoning models behind a proxy when thinking should not consume output tokens
     disable_thinking: false
 
 # 各处理阶段的参数配置，按阶段分包
@@ -29,12 +33,14 @@ pipeline:
   metadata:
     first_pages: 2
   parsing:
+    # Use pymupdf explicitly when no GROBID service is available
     parser: auto
     min_text_characters: 10
   summarization:
     max_chunk_characters: 96000
     fact_max_output_tokens: 3000
     summary_max_output_tokens: 6000
+    # null selects packaged prompts; custom templates must retain the documented placeholders
     facts_prompt_path: null
     summary_prompt_path: null
     repair_prompt_path: null
