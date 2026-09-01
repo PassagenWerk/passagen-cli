@@ -62,6 +62,8 @@ passagen show <paper-id>        # 查看元数据和产物路径
 
 每次 CLI 执行在当前工作目录的 `logs/` 下创建一个带本地日期时间和微秒的目录，例如 `logs/20260827-153012-123456/`。主日志写入 `log.txt`，外部 LLM 请求与响应按 provider 和 Paper 分类写入 `external/llm/<paper-id>/`。生成产物和可复用中间摘要仍保存在 `data/`，外部调用诊断只保存在 `logs/`。不创建 `logs/latest`。`passagen logs clean` 或 `uv run python scripts/clean_logs.py` 将历史执行目录归档到 `logs/old/`。
 
+终端输出通过 `RichHandler` 复用同一 Rich Console，与进度 spinner 兼容：阶段进度消息逐行持久化并保留在滚动历史中，spinner 仅标示当前状态；日志默认仅显示 WARNING 及以上级别，`--debug` 时终端显示 DEBUG 全量。
+
 日志至少覆盖：命令与运行配置路径、扫描目录和逐个 PDF 候选、导入或 SHA-256 重复结果、metadata 本地提取、DOI/Crossref 与 arXiv 路由、GROBID fallback 原因和结果、标识纠正与冲突拒绝、最终字段来源、update 的选择/跳过/成功/失败汇总。外部服务错误作为 warning 记录，业务失败作为 error 记录；日志不输出 API key 或完整配置文件内容。
 
 终端不镜像完整日志，只显示用户可感知的阶段进度。交互式 TTY 使用 Rich spinner 原地更新当前步骤；非 TTY、CI 和重定向输出使用普通逐行文本。scan 显示发现和逐文件导入进度，metadata 显示本地提取、DOI/Crossref、arXiv、GROBID fallback 与保存阶段，批量 update 显示当前 Paper 和总体计数。warning、error 和最终汇总继续作为持久终端输出。

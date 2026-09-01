@@ -1,7 +1,14 @@
+import io
 import logging
 from pathlib import Path
 
-from passagen.cli.logging import archive_execution_logs, configure_execution_logging
+from rich.console import Console
+
+from passagen.cli.logging import (
+    archive_execution_logs,
+    configure_execution_logging,
+    set_execution_log_level,
+)
 
 
 def _reset_passagen_logger() -> None:
@@ -49,3 +56,54 @@ def test_archive_execution_logs_moves_entries_except_excluded_run(tmp_path: Path
     assert not first.exists()
     assert (logs_dir / "old" / first.name).is_dir()
     assert current.is_dir()
+
+
+def test_terminal_handler_shows_only_warnings_by_default(tmp_path: Path) -> None:
+    _reset_passagen_logger()
+    try:
+        buffer = io.StringIO()
+        console = Console(file=buffer, force_terminal=False, width=120)
+        execution_dir = configure_execution_logging(
+            debug=False,
+            logs_dir=tmp_path / "logs",
+            console=console,
+        )
+        logger = logging.getLogger("passagen.test")
+        logger.info("info detail")
+        logger.warning("provider degraded")
+
+        output = buffer.getvalue()
+        assert "provider degraded" in output
+        assert "info detail" not in output
+        file_log = (execution_dir / "log.txt").read_text(encoding="utf-8")
+        assert "info detail" in file_log
+    finally:
+        _reset_passagen_logger()
+
+
+def test_terminal_handler_follows_debug_level_changes(tmp_path: Path) -> None:
+    _reset_passagen_logger()
+    try:
+        buffer = io.StringIO()
+        console = Console(file=buffer, force_terminal=False, width=120)
+        configure_execution_logging(
+            debug=False,
+            logs_dir=tmp_path / "logs",
+            console=console,
+        )
+        logger = logging.getLogger("passagen.test")
+
+        set_execution_log_level(debug=True)
+        logger.debug("debug detail")
+        assert "debug detail" in buffer.getvalue()
+
+        set_execution_log_level(debug=False)
+        buffer.truncate(0)
+        buffer.seek(0)
+        logger.debug("hidden detail")
+        logger.warning("still visible")
+        output = buffer.getvalue()
+        assert "hidden detail" not in output
+        assert "still visible" in output
+    finally:
+        _reset_passagen_logger()

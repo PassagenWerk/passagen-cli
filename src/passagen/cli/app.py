@@ -79,7 +79,7 @@ def main(
     ] = None,
 ) -> None:
     del version
-    execution_log_dir = configure_execution_logging(debug=bool(debug))
+    execution_log_dir = configure_execution_logging(debug=bool(debug), console=console)
     command = ctx.invoked_subcommand or "passagen"
     logger.info("execution started: command=%s log=%s", command, execution_log_dir / "log.txt")
     try:

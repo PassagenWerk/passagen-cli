@@ -456,6 +456,8 @@ logs/<execution-id>/
 
 `summary.json` 是规范化的 Structured Summary v2。`summary.yaml` 便于人工阅读。`outline.md` 只使用合法 Summary 中的事实，不再次读取 PDF。
 
+执行期间终端逐行保留阶段进度，并显示 WARNING 及以上级别的日志（如 provider 降级、重试）；`--debug` 时终端显示全部日志。完整日志始终写入 `logs/<execution-id>/log.txt`。
+
 ## 备份与完整性检查
 
 创建数据库备份：

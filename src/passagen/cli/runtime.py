@@ -36,6 +36,7 @@ class ConsoleProgress:
         self.output = output
         self.initial_message = initial_message
         self.status: Status | None = None
+        self._last_message: str | None = None
 
     def __enter__(self) -> ConsoleProgress:
         if self.output.is_terminal:
@@ -46,10 +47,12 @@ class ConsoleProgress:
         return self
 
     def update(self, message: str) -> None:
+        if message == self._last_message:
+            return
+        self._last_message = message
+        self.output.print(message, markup=False)
         if self.status is not None:
             self.status.update(message)
-        else:
-            self.output.print(message, markup=False)
 
     def __exit__(self, *_args: object) -> None:
         if self.status is not None:
