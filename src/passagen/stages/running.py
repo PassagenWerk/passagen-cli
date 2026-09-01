@@ -4,9 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from passagen.config import PipelineSettings, ProvidersSettings
-from passagen.external import LlmCallStats
-from passagen.llm import LlmProvider
-from passagen.providers import ProviderHealthSnapshot
+from passagen.providers import LlmCallStats, LlmProvider, ProviderHealthSnapshot
 from passagen.stages.progress import ProgressCallback
 from passagen.stages.scanning import ScanResult, scan_directory
 from passagen.stages.updating import UpdateResult, update_papers

@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from passagen.config import LlmSettings
-from passagen.llm import LlmProviderError, OpenAICompatibleProvider
+from passagen.external import LlmProviderError, OpenAICompatibleProvider
 
 
 def test_openai_compatible_provider_sends_json_request(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -5,14 +5,19 @@ import logging
 import os
 import sqlite3
 import tempfile
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from passagen.db import initialize_database
-from passagen.models import Paper
+from passagen.domain import Paper
 from passagen.stages.progress import ProgressCallback, report_progress
+from passagen.stages.scanning.models import (
+    InvalidPdfError,
+    ScanDirectoryError,
+    ScanFailure,
+    ScanResult,
+)
+from passagen.storage.database import initialize_database
 from passagen.storage.repository import (
     PaperRecord,
     find_paper_by_sha256,
@@ -23,27 +28,6 @@ from passagen.storage.repository import (
 _COPY_CHUNK_SIZE = 1024 * 1024
 _PDF_HEADER_SIZE = 1024
 logger = logging.getLogger(__name__)
-
-
-class ScanDirectoryError(ValueError):
-    pass
-
-
-class InvalidPdfError(ValueError):
-    pass
-
-
-@dataclass(frozen=True, slots=True)
-class ScanFailure:
-    path: Path
-    message: str
-
-
-@dataclass(slots=True)
-class ScanResult:
-    imported: list[PaperRecord] = field(default_factory=list)
-    skipped: list[PaperRecord] = field(default_factory=list)
-    failures: list[ScanFailure] = field(default_factory=list)
 
 
 def scan_directory(

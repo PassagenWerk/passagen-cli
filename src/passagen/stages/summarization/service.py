@@ -3,27 +3,41 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
 from passagen.config import LlmSettings, SummarizationSettings
-from passagen.external import LlmCallStats, LlmStage, TrackedLlmProvider
-from passagen.llm import LlmProvider, LlmProviderError, LlmResponse, OpenAICompatibleProvider
-from passagen.models import PaperStatus
+from passagen.domain import PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
 from passagen.prompting import (
     PromptTemplate,
     PromptTemplateError,
     load_summary_prompt_templates,
 )
-from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
+from passagen.providers import (
+    LlmCallStats,
+    LlmProvider,
+    LlmProviderError,
+    LlmResponse,
+    LlmStage,
+    OpenAICompatibleProvider,
+    ProviderHealthSnapshot,
+    ProviderUnavailableError,
+    TrackedLlmProvider,
+    retry_truncated_response,
+)
 from passagen.stages.progress import ProgressCallback, report_progress
+from passagen.stages.summarization.schema import (
+    SUMMARY_SCHEMA_VERSION,
+    ExtractedFacts,
+    StructuredSummary,
+    SummaryIdentity,
+)
+from passagen.storage.files import atomic_write_bytes
 from passagen.storage.repository import (
     ArtifactRecord,
     PaperRecord,
@@ -37,7 +51,6 @@ from passagen.storage.repository import (
 )
 
 logger = logging.getLogger(__name__)
-SUMMARY_SCHEMA_VERSION = "2"
 SUMMARY_PROMPT_VERSION = "2"
 EXTRACTED_ARTIFACT_KIND = "extracted_json"
 SUMMARY_ARTIFACT_KIND = "summary_json"
@@ -45,227 +58,6 @@ SUMMARY_ARTIFACT_KIND = "summary_json"
 
 class SummaryError(RuntimeError):
     pass
-
-
-class ExtractedFacts(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    facts: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Evidence-backed English facts with source page numbers when known; preserve metric "
-            "ownership, comparison direction, units, and conditions."
-        ),
-    )
-
-
-class SummaryIdentity(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    title: str
-    authors: list[str] = Field(default_factory=list)
-    year: int | None = None
-    venue: str | None = None
-    doi: str | None = None
-    arxiv_id: str | None = None
-
-
-class PaperClassification(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    paper_type: str | None = Field(
-        default=None,
-        description=(
-            "General paper type, such as system, architecture, compiler, algorithm, "
-            "measurement, or empirical study."
-        ),
-    )
-    topics: list[str] = Field(default_factory=list)
-    keywords: list[str] = Field(default_factory=list)
-
-
-class SummaryProblem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    context: str | None = Field(
-        default=None, description="Technical context needed to understand the problem."
-    )
-    problem_statement: str | None = Field(
-        default=None, description="The specific research problem addressed by the paper."
-    )
-    motivation: str | None = Field(
-        default=None, description="Why solving the stated problem matters."
-    )
-    goals: list[str] = Field(default_factory=list)
-    non_goals: list[str] = Field(default_factory=list)
-    assumptions: list[str] = Field(default_factory=list)
-    prior_work_limitations: list[str] = Field(
-        default_factory=list,
-        description="Concrete limitations of prior approaches stated by the paper.",
-    )
-
-
-class Contribution(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    category: str | None = Field(
-        default=None,
-        description=(
-            "Contribution category, such as design, mechanism, implementation, analysis, "
-            "benchmark, measurement, or methodology."
-        ),
-    )
-    statement: str
-    evidence_pages: list[int] = Field(default_factory=list)
-
-
-class DesignComponent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    role: str | None = None
-    details: list[str] = Field(default_factory=list)
-    interactions: list[str] = Field(default_factory=list)
-    evidence_pages: list[int] = Field(default_factory=list)
-
-
-class DesignProcess(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    description: str | None = None
-    steps: list[str] = Field(default_factory=list)
-    evidence_pages: list[int] = Field(default_factory=list)
-
-
-class SummaryDesign(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    overview: str | None = Field(
-        default=None, description="High-level design and how it addresses the stated problem."
-    )
-    components: list[DesignComponent] = Field(default_factory=list)
-    processes: list[DesignProcess] = Field(default_factory=list)
-    key_mechanisms: list[str] = Field(default_factory=list)
-    design_decisions: list[str] = Field(default_factory=list)
-    tradeoffs: list[str] = Field(default_factory=list)
-
-
-class SummaryImplementation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    prototype_scope: str | None = None
-    implemented_components: list[str] = Field(default_factory=list)
-    languages: list[str] = Field(default_factory=list)
-    frameworks_and_dependencies: list[str] = Field(
-        default_factory=list,
-        description="Frameworks, libraries, toolchains, and external dependencies.",
-    )
-    hardware_platforms: list[str] = Field(default_factory=list)
-    software_platforms: list[str] = Field(default_factory=list)
-    code_size: str | None = None
-    deployment_model: str | None = None
-    engineering_details: list[str] = Field(default_factory=list)
-
-
-class EvaluationEnvironment(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    hardware: list[str] = Field(default_factory=list)
-    software: list[str] = Field(default_factory=list)
-    topology_or_scale: str | None = None
-    configuration: list[str] = Field(default_factory=list)
-
-
-class EvaluationResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    research_question: str | None = None
-    metric: str
-    metric_direction: Literal["higher_is_better", "lower_is_better", "neutral", "unknown"] = (
-        "unknown"
-    )
-    subject: str
-    subject_value: str | None = Field(
-        default=None, description="Measured value belonging to the evaluated subject."
-    )
-    baseline: str | None = None
-    baseline_value: str | None = Field(
-        default=None, description="Measured value belonging to the named baseline."
-    )
-    improvement: str | None = None
-    conditions: list[str] = Field(default_factory=list)
-    evidence_pages: list[int] = Field(
-        min_length=1, description="Source pages supporting the complete result."
-    )
-
-
-class SummaryEvaluation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    research_questions: list[str] = Field(default_factory=list)
-    environment: EvaluationEnvironment = Field(default_factory=EvaluationEnvironment)
-    baselines: list[str] = Field(default_factory=list)
-    datasets: list[str] = Field(
-        default_factory=list, description="Datasets used in the evaluation."
-    )
-    workloads: list[str] = Field(
-        default_factory=list, description="Benchmarks, applications, or workloads evaluated."
-    )
-    metrics: list[str] = Field(default_factory=list)
-    methodology: list[str] = Field(default_factory=list)
-    results: list[EvaluationResult] = Field(default_factory=list)
-    ablations: list[EvaluationResult] = Field(default_factory=list)
-
-
-class SummaryDiscussion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    limitations: list[str] = Field(
-        default_factory=list, description="Limitations and trade-offs acknowledged by the paper."
-    )
-    tradeoffs: list[str] = Field(default_factory=list)
-    threats_to_validity: list[str] = Field(default_factory=list)
-    applicability: list[str] = Field(default_factory=list)
-    future_work: list[str] = Field(default_factory=list)
-    conclusions: list[str] = Field(
-        default_factory=list, description="Conclusions directly supported by the paper."
-    )
-    reusable_methods: list[str] = Field(
-        default_factory=list,
-        description="Methods that could be reused in related research.",
-    )
-
-
-class RelatedWorkGroup(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    area: str
-    representative_works: list[str] = Field(default_factory=list)
-    relationship: str | None = None
-    distinction: str | None = None
-    evidence_pages: list[int] = Field(default_factory=list)
-
-
-class SummaryRelatedWork(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    groups: list[RelatedWorkGroup] = Field(default_factory=list)
-
-
-class StructuredSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal["2"] = SUMMARY_SCHEMA_VERSION
-    identity: SummaryIdentity
-    classification: PaperClassification = Field(default_factory=PaperClassification)
-    problem: SummaryProblem = Field(default_factory=SummaryProblem)
-    contributions: list[Contribution] = Field(default_factory=list)
-    design: SummaryDesign = Field(default_factory=SummaryDesign)
-    implementation: SummaryImplementation = Field(default_factory=SummaryImplementation)
-    evaluation: SummaryEvaluation = Field(default_factory=SummaryEvaluation)
-    discussion: SummaryDiscussion = Field(default_factory=SummaryDiscussion)
-    related_work: SummaryRelatedWork = Field(default_factory=SummaryRelatedWork)
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,8 +161,8 @@ def summarize_paper(
         yaml_content = yaml.safe_dump(
             summary.model_dump(mode="json"), sort_keys=False, allow_unicode=True
         ).encode()
-        _atomic_write(data_dir / json_path, json_content)
-        _atomic_write(data_dir / yaml_path, yaml_content)
+        atomic_write_bytes(data_dir / json_path, json_content, prefix="summary-")
+        atomic_write_bytes(data_dir / yaml_path, yaml_content, prefix="summary-")
         updated, artifact = save_summary_artifacts(
             database_path,
             paper_id,
@@ -436,7 +228,7 @@ def _section_facts(
             validated = ExtractedFacts.model_validate_json(response.content).model_dump_json()
         except ValidationError as exc:
             raise SummaryError(f"Extracted facts failed schema validation: {exc}") from exc
-        _atomic_write(
+        atomic_write_bytes(
             path,
             json.dumps(
                 {
@@ -445,6 +237,7 @@ def _section_facts(
                     "response": validated,
                 }
             ).encode(),
+            prefix="summary-",
         )
         facts.append(validated)
     return facts
@@ -463,11 +256,9 @@ def _generate_facts(
     *,
     max_attempts: int = 3,
 ) -> LlmResponse:
-    attempt_tokens = max_output_tokens
-    response: LlmResponse | None = None
-    for attempt in range(1, max_attempts + 1):
+    def request(attempt: int, attempt_tokens: int) -> LlmResponse:
         suffix = "" if attempt == 1 else f"-retry-{attempt}"
-        response = _generate(
+        return _generate(
             provider,
             prompt,
             database_path,
@@ -477,25 +268,28 @@ def _generate_facts(
             attempt_tokens,
             LlmStage.FACT,
         )
-        truncated = response.finish_reason == "length"
-        valid = False
-        if truncated:
-            try:
-                ExtractedFacts.model_validate_json(response.content)
-            except ValidationError:
-                pass
-            else:
-                valid = True
-        if not truncated or valid or attempt == max_attempts:
-            return response
-        attempt_tokens = min(attempt_tokens * 2, max_output_tokens * 4)
+
+    def is_valid(content: str) -> bool:
+        try:
+            ExtractedFacts.model_validate_json(content)
+        except ValidationError:
+            return False
+        return True
+
+    def on_retry(attempt_tokens: int) -> None:
         report_progress(
             progress,
             f"Retrying section facts {index}/{total} with {attempt_tokens} output tokens "
             "(previous response was truncated)...",
         )
-    assert response is not None
-    return response
+
+    return retry_truncated_response(
+        request,
+        initial_max_tokens=max_output_tokens,
+        is_valid=is_valid,
+        max_attempts=max_attempts,
+        on_retry=on_retry,
+    )
 
 
 def _generate(
@@ -517,8 +311,10 @@ def _generate(
         "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
     }
     if diagnostic_path is not None:
-        _atomic_write(
-            diagnostic_path, json.dumps(diagnostic, ensure_ascii=False, indent=2).encode()
+        atomic_write_bytes(
+            diagnostic_path,
+            json.dumps(diagnostic, ensure_ascii=False, indent=2).encode(),
+            prefix="summary-",
         )
     logger.info(
         "llm request: label=%s model=%s prompt_chars=%s max_tokens=%s diagnostic=%s",
@@ -545,8 +341,10 @@ def _generate(
         )
         diagnostic["error"] = str(exc)
         if diagnostic_path is not None:
-            _atomic_write(
-                diagnostic_path, json.dumps(diagnostic, ensure_ascii=False, indent=2).encode()
+            atomic_write_bytes(
+                diagnostic_path,
+                json.dumps(diagnostic, ensure_ascii=False, indent=2).encode(),
+                prefix="summary-",
             )
         raise
     record_llm_call(
@@ -569,8 +367,10 @@ def _generate(
         }
     )
     if diagnostic_path is not None:
-        _atomic_write(
-            diagnostic_path, json.dumps(diagnostic, ensure_ascii=False, indent=2).encode()
+        atomic_write_bytes(
+            diagnostic_path,
+            json.dumps(diagnostic, ensure_ascii=False, indent=2).encode(),
+            prefix="summary-",
         )
     logger.info(
         "llm response: label=%s response_chars=%s input_tokens=%s output_tokens=%s "
@@ -695,20 +495,3 @@ def _repair_prompt(template: PromptTemplate, raw: str, error: str) -> str:
         validation_error=error,
         candidate=raw,
     )
-
-
-def _atomic_write(path: Path, content: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix="summary-", suffix=".tmp", dir=path.parent)
-    temp_path = Path(temporary)
-    try:
-        with os.fdopen(descriptor, "wb") as output:
-            descriptor = -1
-            output.write(content)
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temp_path, path)
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        temp_path.unlink(missing_ok=True)

@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
 
 from passagen.config import MetadataSettings, ProvidersSettings
-from passagen.metadata import (
-    ArxivClient,
+from passagen.domain import PaperStatus
+from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
+from passagen.providers.metadata import (
     BibliographicMetadata,
-    CrossrefClient,
-    GrobidClient,
+    ConfiguredMetadataProvider,
     MetadataLookup,
     MetadataLookupError,
     PdfMetadataError,
@@ -18,8 +18,7 @@ from passagen.metadata import (
     extract_pdf_metadata,
     merge_metadata,
 )
-from passagen.models import PaperStatus
-from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
+from passagen.stages.metadata.models import MetadataResolutionError, MetadataResolutionResult
 from passagen.stages.progress import ProgressCallback, report_progress
 from passagen.storage.repository import (
     MetadataConflictError,
@@ -30,17 +29,6 @@ from passagen.storage.repository import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class MetadataResolutionError(RuntimeError):
-    pass
-
-
-@dataclass(frozen=True, slots=True)
-class MetadataResolutionResult:
-    paper: PaperRecord
-    warnings: tuple[str, ...] = ()
-    updated: bool = True
 
 
 def resolve_paper_metadata(
@@ -110,9 +98,11 @@ def resolve_paper_metadata(
     report_progress(progress, "Local PDF metadata extracted.")
 
     warnings: list[str] = []
-    grobid_client = grobid or GrobidClient(
-        base_url=providers.grobid.base_url,
-        timeout_seconds=providers.grobid.timeout_seconds,
+    metadata_provider = ConfiguredMetadataProvider(
+        providers,
+        crossref=crossref,
+        arxiv=arxiv,
+        grobid=grobid,
     )
     grobid_attempted = False
     grobid_metadata = BibliographicMetadata()
@@ -125,22 +115,17 @@ def resolve_paper_metadata(
             fallback_reason,
         )
         report_progress(progress, f"Trying GROBID fallback ({fallback_reason}).")
-        extracted = _extract_grobid(pdf_path, grobid_client, warnings, progress)
+        extracted = _extract_grobid(pdf_path, metadata_provider.grobid, warnings, progress)
         grobid_metadata = _initial_grobid_fallback(local, extracted, warnings, progress)
         grobid_attempted = True
     candidate = merge_metadata(local, grobid_metadata)
-    crossref_client = crossref or CrossrefClient(
-        base_url=providers.crossref.base_url,
-        timeout_seconds=providers.crossref.timeout_seconds,
-        mailto=providers.crossref.mailto,
-    )
     queried_doi = candidate.doi
     if queried_doi is not None and providers.crossref.enabled:
         _require_provider(provider_health, "crossref")
     crossref_metadata = _lookup(
         "Crossref",
         queried_doi,
-        crossref_client,
+        metadata_provider.crossref,
         enabled=providers.crossref.enabled,
         warnings=warnings,
         progress=progress,
@@ -154,7 +139,7 @@ def resolve_paper_metadata(
             queried_doi,
         )
         report_progress(progress, "Crossref title conflict; trying GROBID fallback.")
-        extracted = _extract_grobid(pdf_path, grobid_client, warnings, progress)
+        extracted = _extract_grobid(pdf_path, metadata_provider.grobid, warnings, progress)
         if _titles_match(crossref_metadata.title, extracted.title):
             grobid_metadata = extracted
         else:
@@ -179,7 +164,7 @@ def resolve_paper_metadata(
             crossref_metadata = _lookup(
                 "Crossref",
                 queried_doi,
-                crossref_client,
+                metadata_provider.crossref,
                 enabled=providers.crossref.enabled,
                 warnings=warnings,
                 progress=progress,
@@ -203,11 +188,7 @@ def resolve_paper_metadata(
     arxiv_metadata = _lookup(
         "arXiv",
         candidate.arxiv_id,
-        arxiv
-        or ArxivClient(
-            base_url=providers.arxiv.base_url,
-            timeout_seconds=providers.arxiv.timeout_seconds,
-        ),
+        metadata_provider.arxiv,
         enabled=providers.arxiv.enabled,
         warnings=warnings,
         progress=progress,
@@ -253,7 +234,7 @@ def _require_provider(health: ProviderHealthSnapshot | None, name: str) -> None:
 def _lookup(
     provider: str,
     identifier: str | None,
-    client: MetadataLookup,
+    lookup: Callable[[str], BibliographicMetadata | None],
     *,
     enabled: bool,
     warnings: list[str],
@@ -285,7 +266,7 @@ def _lookup(
     else:
         report_progress(progress, f"Querying arXiv by ID: {identifier}")
     try:
-        result = client.lookup(identifier)
+        result = lookup(identifier)
     except MetadataLookupError as exc:
         logger.warning(
             "metadata provider failed: provider=%s identifier=%s error=%s",
@@ -319,14 +300,14 @@ def _lookup(
 
 def _extract_grobid(
     pdf_path: Path,
-    client: PdfMetadataLookup,
+    extract: Callable[[Path], BibliographicMetadata | None],
     warnings: list[str],
     progress: ProgressCallback | None,
 ) -> BibliographicMetadata:
     logger.info("metadata route selected: provider=GROBID file=%s", pdf_path)
     report_progress(progress, "Uploading PDF to GROBID...")
     try:
-        result = client.extract(pdf_path)
+        result = extract(pdf_path)
     except MetadataLookupError as exc:
         logger.warning("metadata provider failed: provider=GROBID file=%s error=%s", pdf_path, exc)
         warnings.append(str(exc))

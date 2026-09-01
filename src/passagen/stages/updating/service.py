@@ -1,23 +1,25 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
 from passagen.config import PipelineSettings, ProvidersSettings
-from passagen.external import LlmCallStats
-from passagen.llm import LlmProvider
-from passagen.models import PaperStatus
-from passagen.providers import ProviderHealthSnapshot
+from passagen.domain import PaperStatus
+from passagen.providers import LlmCallStats, LlmProvider, ProviderHealthSnapshot
 from passagen.stages.metadata import MetadataResolutionError, resolve_paper_metadata
 from passagen.stages.outlining import OutlineError, outline_paper
 from passagen.stages.parsing import PaperParsingError, parse_paper
 from passagen.stages.progress import ProgressCallback, report_progress
 from passagen.stages.summarization import SummaryError, summarize_paper
+from passagen.stages.updating.models import (
+    LATEST_IMPLEMENTED_STATUS,
+    UpdateFailure,
+    UpdateResult,
+    UpdateTargetError,
+)
 from passagen.storage.repository import PaperRecord, get_paper, list_papers
 
-LATEST_IMPLEMENTED_STATUS = PaperStatus.OUTLINED
 _UPDATE_PENDING_STATUSES = {
     PaperStatus.DISCOVERED,
     PaperStatus.METADATA_RESOLVED,
@@ -25,25 +27,6 @@ _UPDATE_PENDING_STATUSES = {
     PaperStatus.SUMMARIZED,
 }
 logger = logging.getLogger(__name__)
-
-
-class UpdateTargetError(ValueError):
-    pass
-
-
-@dataclass(frozen=True, slots=True)
-class UpdateFailure:
-    paper_id: str
-    message: str
-
-
-@dataclass(slots=True)
-class UpdateResult:
-    target_status: PaperStatus
-    updated: list[PaperRecord] = field(default_factory=list)
-    skipped: list[PaperRecord] = field(default_factory=list)
-    warnings: list[UpdateFailure] = field(default_factory=list)
-    failures: list[UpdateFailure] = field(default_factory=list)
 
 
 def update_papers(

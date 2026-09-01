@@ -7,12 +7,11 @@ from pathlib import Path
 import pytest
 
 from passagen.config import LlmSettings, OutliningSettings
-from passagen.db import connect_database, initialize_database
-from passagen.external import LlmCallStats, LlmStage
-from passagen.llm import LlmResponse
-from passagen.models import Paper, PaperStatus
+from passagen.domain import Paper, PaperStatus
+from passagen.providers import LlmCallStats, LlmResponse, LlmStage
 from passagen.stages.outlining import OutlineError, outline_paper
 from passagen.stages.summarization import StructuredSummary
+from passagen.storage.database import connect_database, initialize_database
 from passagen.storage.repository import get_artifact, register_pdf, save_summary_artifacts
 
 

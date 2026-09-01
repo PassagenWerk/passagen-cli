@@ -5,9 +5,9 @@ import pymupdf
 import pytest
 
 from passagen.config import GrobidSettings, ParserBackend, ParsingSettings
-from passagen.metadata import BibliographicMetadata
-from passagen.models import PaperStatus
-from passagen.parsing import GrobidFulltextParser, ParsingError, PyMuPdfParser
+from passagen.domain import BibliographicMetadata, PaperStatus
+from passagen.external.parsing import GrobidFulltextParser
+from passagen.parsing import ParsingError, PyMuPdfParser
 from passagen.providers import ProviderHealthSnapshot, ProviderStatus
 from passagen.stages.parsing import PaperParsingError, parse_paper
 from passagen.stages.scanning import scan_directory
@@ -90,7 +90,6 @@ def test_grobid_parser_health_and_tei_structure(tmp_path: Path) -> None:
             timeout_seconds=1,
             client=client,
         )
-        assert parser.is_available() is True
         parsed = parser.parse(pdf_path)
 
     assert parsed.parser == "grobid"

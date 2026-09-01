@@ -10,12 +10,15 @@ import pymupdf
 import pytest
 
 from passagen.config import MetadataSettings, ProvidersSettings
-from passagen.metadata import (
+from passagen.domain import PaperStatus
+from passagen.external.metadata import (
     ArxivClient,
-    BibliographicMetadata,
     CrossrefClient,
     GrobidClient,
     MetadataLookupError,
+)
+from passagen.providers.metadata import (
+    BibliographicMetadata,
     extract_arxiv_id,
     extract_doi,
     extract_pdf_metadata,
@@ -23,7 +26,6 @@ from passagen.metadata import (
     normalize_arxiv_id,
     normalize_doi,
 )
-from passagen.models import PaperStatus
 from passagen.stages.metadata import resolve_paper_metadata
 from passagen.stages.scanning import scan_directory
 
@@ -541,7 +543,7 @@ def test_resolve_metadata_uses_grobid_to_recover_crossref_conflict(tmp_path: Pat
 
     log_output = io.StringIO()
     log_handler = logging.StreamHandler(log_output)
-    service_logger = logging.getLogger("passagen.stages.metadata")
+    service_logger = logging.getLogger("passagen.stages.metadata.service")
     previous_level = service_logger.level
     service_logger.addHandler(log_handler)
     service_logger.setLevel(logging.INFO)

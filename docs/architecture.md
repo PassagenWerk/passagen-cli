@@ -12,14 +12,12 @@
 |------|----------|
 | `src/passagen/cli/` | Typer composition root、配置错误呈现、命令和 execution logging |
 | `src/passagen/config/` | 配置模型、优先级合并和运行时校验 |
-| `src/passagen/models.py` | Paper 状态与基础领域模型 |
-| `src/passagen/db.py` | 数据库初始化、状态、在线备份和底层兼容入口 |
+| `src/passagen/domain/` | Paper、元数据值对象和标识规范化等稳定领域模型 |
 | `src/passagen/storage/` | SQLAlchemy ORM、Session 事务、repository 和 Alembic migration |
-| `src/passagen/metadata.py` | 轻量 PDF 标识提取、GROBID/Crossref/arXiv adapter 和字段合并 |
-| `src/passagen/parsing.py` | ParsedPaper contract、GROBID fulltext 与 PyMuPDF parser |
-| `src/passagen/llm.py` | OpenAI-compatible LLM adapter 与统一响应 contract |
-| `src/passagen/providers/` | 外部服务启动健康快照及可用性 contract |
-| `src/passagen/stages/` | scan、metadata、parse、summarize 和 update 的应用编排 |
+| `src/passagen/parsing/` | ParsedPaper contract 和本地 PyMuPDF parser |
+| `src/passagen/external/` | HTTP client、供应商响应解析和外部服务可用性探测 |
+| `src/passagen/providers/` | 外部能力使用策略、配置化调用、重试和指标统计 |
+| `src/passagen/stages/` | scan、metadata、parse、summarize、outline 和 update 的应用编排 |
 
 底层 parser、metadata adapter、repository 和领域模型在职责仍然紧凑时保持为模块；应用编排集中在 `stages/`，CLI 只负责组合依赖与呈现结果。不要为了匹配远期目标目录预先创建空包。
 
@@ -70,13 +68,10 @@ Settings + command input
 | `cli/` | 命令注册、参数转换、用户输出 | SQL、PDF/LLM 语义 |
 | `domain/` | Paper、状态转换、稳定值对象和领域错误 | Typer、HTTP、sqlite3 连接 |
 | `storage/` | migration、repository、事务和 artifact 路径管理 | CLI 展示、LLM prompt |
-| `parsing/` | `PaperParser` contract、GROBID/PyMuPDF adapter、统一 ParsedPaper | metadata 查询、summary 生成 |
-| `metadata/` | 轻量 PDF 标识提取、GROBID/Crossref/arXiv adapter、字段来源合并 | 全文结构解析、pipeline 编排 |
-| `summarization/` | summary Schema、分块、prompt、校验和有限修复 | CLI、数据库 migration |
-| `outlining/` | 从合法 summary 生成英文 outline | 直接读取和总结 PDF |
-| `providers/` | LLM provider contract 和供应商 adapter | summary 领域决策 |
-| `pipeline/` | stage 顺序、输入输出检查、恢复与运行记录 | parser 算法、SQL 细节、prompt 内容 |
-| `utils/` | 无业务语义的文件或日志小工具 | Paper、summary、metadata 规则 |
+| `parsing/` | `PaperParser` contract、本地 PyMuPDF parser、PDF 元数据布局提取、统一 ParsedPaper | HTTP、pipeline 编排 |
+| `external/` | HTTP transport、供应商 DTO 解码和可用性探测 | 重试、指标、fallback、stage 状态 |
+| `providers/` | 对 external 的配置化使用、重试、指标和 fallback 接口 | CLI 展示、数据库写入 |
+| `stages/` | stage 顺序、输入输出检查、恢复和 artifact 提交 | HTTP client、供应商响应解析 |
 
 当一个包内部出现多个独立职责时，再拆成模块。例如 `storage/` 可以逐步包含 `connection.py`、`migrations.py`、`papers.py` 和 `artifacts.py`。在此之前，一个清晰的小模块优于只有转发作用的目录层级。
 
@@ -86,9 +81,9 @@ Settings + command input
 
 ```text
 cli
-  -> pipeline/application services
-       -> domain models + service protocols
-       -> storage/parsing/metadata/providers adapters
+  -> stages
+       -> providers -> external
+       -> storage/parsing/domain
 
 config -> cli and composition root
 adapters -> domain models or their own boundary models
@@ -101,6 +96,9 @@ domain -> Python standard library only
 - YAML 只存在于配置输入边界；其他业务包依赖经过 Pydantic 校验的配置模型，不读取原始 mapping。
 - `pipeline` 依赖 parser/provider/repository 的 Protocol，不依赖某个供应商才能表达业务流程。
 - adapter 可以依赖第三方库，但必须把响应转换为 Passagen 模型后再返回。
+- `httpx` 和供应商 HTTP 细节只允许存在于 `external/`。
+- `stages/` 和 `cli/` 只使用 `providers`，禁止导入 `external`。
+- `providers` 负责重试、调用指标和 fallback；`external` 不依赖 providers、stages 或 storage。
 - `cli` 是 composition root：读取 Settings，构造具体 adapter，调用应用入口并呈现结果。
 - 子包之间不能通过导入对方的私有 helper 建立隐式 contract。
 
@@ -160,20 +158,20 @@ Pipeline 不应把所有中间对象堆成一个不断扩张的 context 字段�
 
 ## 外部服务
 
-每种外部能力由小型 Protocol 与 adapter 组成：
+外部能力分为低层 adapter 与高层使用策略：
 
 ```text
-PaperParser.parse(path) -> ParsedPaper
-MetadataClient.lookup(identifier) -> MetadataResult | None
-PdfMetadataClient.extract(path) -> MetadataResult | None
-LLMProvider.generate(request) -> LLMResponse
+external: HTTP/protocol -> decoded response
+providers: configured call + health policy + retry + metrics
+stages: provider result -> validated artifact + status transition
 ```
 
 - Protocol 使用 Passagen 的输入输出模型，不泄漏 HTTP response object 或 SDK 类型。
 - DOI 由 Crossref adapter 处理，arXiv ID 由 arXiv adapter 处理；GROBID header adapter 只接收受管理 PDF，并作为低置信度或冲突 fallback，不执行标题模糊搜索。
 - 元数据补全失败是可降级结果，pipeline 保留 PDF 元数据并继续；只有本地数据自身无效时才是业务失败。
-- timeout、认证、重试和供应商错误转换属于 adapter。
-- fallback 选择和是否继续处理属于应用或 pipeline 策略。
+- timeout、认证和供应商响应错误转换属于 external adapter。
+- 重试、调用指标、fallback 和可用性要求属于 provider。
+- stage 不自行构造 HTTP client，也不直接调用 external adapter。
 - 所有 client 支持注入，以便测试使用固定 fake，而不是访问真实服务。
 - CLI 在配置加载后并行探测外部服务一次，并将不可变的 `ProviderHealthSnapshot` 注入 stages；探测失败本身不终止命令。
 - stage 只有在实际需要某个服务时才调用 snapshot 的 `require()`。不得在每篇 Paper 或每次外部请求前重复健康探测。

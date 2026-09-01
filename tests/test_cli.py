@@ -8,9 +8,8 @@ import pytest
 from typer.testing import CliRunner
 
 from passagen.cli import app
-from passagen.db import SCHEMA_VERSION
-from passagen.llm import LlmResponse
-from passagen.providers import ProviderHealthSnapshot, ProviderStatus
+from passagen.providers import LlmResponse, ProviderHealthSnapshot, ProviderStatus
+from passagen.storage.database import SCHEMA_VERSION
 from passagen.storage.repository import list_papers
 
 runner = CliRunner()
@@ -23,14 +22,13 @@ def isolate_cli_working_directory(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        "passagen.stages.summarization.OpenAICompatibleProvider",
+        "passagen.stages.summarization.service.OpenAICompatibleProvider",
         lambda _settings: _FakeLlmProvider(),
     )
     monkeypatch.setattr(
-        "passagen.stages.outlining.OpenAICompatibleProvider",
+        "passagen.stages.outlining.service.OpenAICompatibleProvider",
         lambda _settings: _FakeLlmProvider(),
     )
-    monkeypatch.setattr("passagen.metadata.GrobidClient.is_available", lambda _client: True)
     monkeypatch.setattr(
         importlib.import_module("passagen.cli.app"),
         "check_provider_health",

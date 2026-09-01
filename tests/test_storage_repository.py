@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from passagen.db import connect_database, initialize_database
 from passagen.storage import ArtifactRow, PaperRow, session_scope
+from passagen.storage.database import connect_database, initialize_database
 
 
 def test_artifact_and_status_write_roll_back_together(tmp_path: Path) -> None:

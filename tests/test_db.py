@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from passagen.db import (
+from passagen.storage.database import (
     SCHEMA_VERSION,
     DatabaseVersionError,
     connect_database,

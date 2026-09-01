@@ -9,8 +9,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from passagen.metadata import BibliographicMetadata
-from passagen.models import Paper, PaperStatus
+from passagen.domain import BibliographicMetadata, Paper, PaperStatus
 from passagen.storage.engine import session_scope
 from passagen.storage.models import ArtifactRow, LlmCallRow, PaperRow, ProcessingRunRow
 

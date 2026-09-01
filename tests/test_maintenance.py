@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from passagen.db import backup_database, connect_database, initialize_database
-from passagen.maintenance import check_artifacts
-from passagen.models import Paper
+from passagen.domain import Paper
+from passagen.storage.database import backup_database, connect_database, initialize_database
+from passagen.storage.maintenance import check_artifacts
 from passagen.storage.repository import register_pdf
 
 

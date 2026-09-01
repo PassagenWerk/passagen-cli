@@ -3,33 +3,38 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    StringConstraints,
-    ValidationError,
-    model_validator,
-)
+from pydantic import ValidationError
 
 from passagen.config import LlmSettings, OutliningSettings
-from passagen.external import LlmCallStats, LlmStage, TrackedLlmProvider
-from passagen.llm import LlmProvider, LlmProviderError, OpenAICompatibleProvider
-from passagen.models import PaperStatus
+from passagen.domain import PaperStatus
 from passagen.prompting import (
     PromptTemplate,
     PromptTemplateError,
     load_outline_prompt_template,
 )
-from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
+from passagen.providers import (
+    LlmCallStats,
+    LlmProvider,
+    LlmProviderError,
+    LlmStage,
+    OpenAICompatibleProvider,
+    ProviderHealthSnapshot,
+    ProviderUnavailableError,
+    TrackedLlmProvider,
+)
+from passagen.stages.outlining.schema import (
+    _SECTIONS,
+    OUTLINE_SCHEMA_VERSION,
+    OutlineSection,
+    PaperOutline,
+)
 from passagen.stages.progress import ProgressCallback, report_progress
 from passagen.stages.summarization import SUMMARY_SCHEMA_VERSION, StructuredSummary
+from passagen.storage.files import atomic_write_bytes
 from passagen.storage.repository import (
     ArtifactRecord,
     PaperRecord,
@@ -43,73 +48,13 @@ from passagen.storage.repository import (
 )
 
 logger = logging.getLogger(__name__)
-OUTLINE_SCHEMA_VERSION = "2"
 OUTLINE_PROMPT_VERSION = "2"
 SUMMARY_ARTIFACT_KIND = "summary_json"
 OUTLINE_ARTIFACT_KIND = "outline_md"
-_SECTIONS = (
-    ("introduction", "Introduction"),
-    ("background", "Background and Motivation"),
-    ("design", "Design"),
-    ("implementation", "Implementation"),
-    ("evaluation", "Evaluation"),
-    ("limitations", "Limitations and Trade-offs"),
-    ("related_work", "Related Work"),
-    ("conclusion", "Conclusion"),
-)
-NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class OutlineError(RuntimeError):
     pass
-
-
-class OutlinePoint(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    topic: NonEmptyText = Field(description="A specific named subtopic within the section.")
-    details: list[NonEmptyText] = Field(
-        default_factory=list,
-        description="Supporting technical details grounded in the validated summary.",
-    )
-    evidence_pages: list[int] = Field(
-        default_factory=list,
-        description="Evidence pages copied from the summary when available.",
-    )
-
-
-class OutlineSection(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    thesis: NonEmptyText | None = Field(
-        default=None, description="A concise section-level thesis grounded in the summary."
-    )
-    points: list[OutlinePoint] = Field(
-        default_factory=list, description="Named subtopics and supporting details."
-    )
-
-    @property
-    def has_content(self) -> bool:
-        return self.thesis is not None or bool(self.points)
-
-
-class PaperOutline(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    introduction: OutlineSection = Field(default_factory=OutlineSection)
-    background: OutlineSection = Field(default_factory=OutlineSection)
-    design: OutlineSection = Field(default_factory=OutlineSection)
-    implementation: OutlineSection = Field(default_factory=OutlineSection)
-    evaluation: OutlineSection = Field(default_factory=OutlineSection)
-    limitations: OutlineSection = Field(default_factory=OutlineSection)
-    related_work: OutlineSection = Field(default_factory=OutlineSection)
-    conclusion: OutlineSection = Field(default_factory=OutlineSection)
-
-    @model_validator(mode="after")
-    def require_content(self) -> PaperOutline:
-        if not any(getattr(self, field).has_content for field, _heading in _SECTIONS):
-            raise ValueError("outline must contain at least one non-empty section")
-        return self
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,8 +160,8 @@ def outline_paper(
         source_content = (json.dumps(source, ensure_ascii=False, indent=2) + "\n").encode()
         markdown_path = Path("papers") / paper_id / "outline.md"
         source_path = Path("papers") / paper_id / "outline.source.json"
-        _atomic_write(data_dir / markdown_path, markdown_content)
-        _atomic_write(data_dir / source_path, source_content)
+        atomic_write_bytes(data_dir / markdown_path, markdown_content, prefix="outline-")
+        atomic_write_bytes(data_dir / source_path, source_content, prefix="outline-")
         updated, artifact = save_outline_artifacts(
             database_path,
             paper_id,
@@ -318,21 +263,8 @@ def _write_diagnostic(
         document["response"] = response
     if error is not None:
         document["error"] = error
-    _atomic_write(path, (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode())
-
-
-def _atomic_write(path: Path, content: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix="outline-", suffix=".tmp", dir=path.parent)
-    temp_path = Path(temporary)
-    try:
-        with os.fdopen(descriptor, "wb") as output:
-            descriptor = -1
-            output.write(content)
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temp_path, path)
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        temp_path.unlink(missing_ok=True)
+    atomic_write_bytes(
+        path,
+        (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode(),
+        prefix="outline-",
+    )

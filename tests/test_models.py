@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from passagen.models import InvalidStatusTransition, Paper, PaperStatus
+from passagen.domain import InvalidStatusTransition, Paper, PaperStatus
 
 
 def make_paper() -> Paper:

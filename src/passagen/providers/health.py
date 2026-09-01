@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-import httpx
-
-from passagen.config import LlmSettings, ProvidersSettings
+from passagen.config import ProvidersSettings
+from passagen.external.availability import grobid_status, http_status, llm_status
 
 
 class ProviderUnavailableError(RuntimeError):
@@ -33,12 +31,12 @@ class ProviderHealthSnapshot:
 def check_provider_health(settings: ProvidersSettings) -> ProviderHealthSnapshot:
     timeout = settings.healthcheck_timeout_seconds
     checks = {
-        "grobid": lambda: _grobid_status(settings.grobid.base_url, timeout),
-        "llm": lambda: _llm_status(settings.llm, timeout),
+        "grobid": lambda: grobid_status(settings.grobid.base_url, timeout),
+        "llm": lambda: llm_status(settings.llm.base_url, settings.llm.api_key_env, timeout),
     }
     statuses: dict[str, ProviderStatus] = {}
     if settings.crossref.enabled:
-        checks["crossref"] = lambda: _http_status(
+        checks["crossref"] = lambda: http_status(
             settings.crossref.base_url.rstrip("/") + "/works",
             timeout,
             params={"rows": "0"},
@@ -46,7 +44,7 @@ def check_provider_health(settings: ProvidersSettings) -> ProviderHealthSnapshot
     else:
         statuses["crossref"] = ProviderStatus("crossref", False, "disabled by configuration")
     if settings.arxiv.enabled:
-        checks["arxiv"] = lambda: _http_status(
+        checks["arxiv"] = lambda: http_status(
             settings.arxiv.base_url.rstrip("/") + "/api/query",
             timeout,
             params={"search_query": "all:test", "max_results": "0"},
@@ -59,38 +57,3 @@ def check_provider_health(settings: ProvidersSettings) -> ProviderHealthSnapshot
             available, detail = future.result()
             statuses[name] = ProviderStatus(name, available, detail)
     return ProviderHealthSnapshot(statuses)
-
-
-def _http_status(
-    url: str,
-    timeout: float,
-    *,
-    params: dict[str, str] | None = None,
-    headers: dict[str, str] | None = None,
-) -> tuple[bool, str]:
-    try:
-        response = httpx.get(url, params=params, headers=headers, timeout=timeout)
-    except httpx.HTTPError as exc:
-        return False, str(exc)
-    return response.status_code < 500, f"HTTP {response.status_code}"
-
-
-def _grobid_status(base_url: str, timeout: float) -> tuple[bool, str]:
-    try:
-        response = httpx.get(base_url.rstrip("/") + "/api/isalive", timeout=timeout)
-    except httpx.HTTPError as exc:
-        return False, str(exc)
-    available = response.is_success and response.text.strip().lower() == "true"
-    return available, f"HTTP {response.status_code} body={response.text.strip()!r}"
-
-
-def _llm_status(settings: LlmSettings, timeout: float) -> tuple[bool, str]:
-    api_key_env = settings.api_key_env
-    api_key = os.environ.get(api_key_env)
-    if not api_key:
-        return False, f"environment variable {api_key_env} is not set"
-    return _http_status(
-        settings.base_url.rstrip("/") + "/models",
-        timeout,
-        headers={"Authorization": f"Bearer {api_key}"},
-    )

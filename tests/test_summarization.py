@@ -8,13 +8,12 @@ import pytest
 from pydantic import ValidationError
 
 from passagen.config import LlmSettings, PipelineSettings, ProvidersSettings, SummarizationSettings
-from passagen.db import connect_database, initialize_database
-from passagen.external import LlmCallStats, LlmStage
-from passagen.llm import LlmResponse
-from passagen.models import Paper, PaperStatus
+from passagen.domain import Paper, PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
+from passagen.providers import LlmCallStats, LlmResponse, LlmStage
 from passagen.stages.summarization import StructuredSummary, SummaryError, summarize_paper
 from passagen.stages.updating import update_papers
+from passagen.storage.database import connect_database, initialize_database
 from passagen.storage.repository import register_pdf, save_parsed_artifact
 
 

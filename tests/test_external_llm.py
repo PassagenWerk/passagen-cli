@@ -1,7 +1,12 @@
 import pytest
 
-from passagen.external import LlmCallStats, LlmStage, TrackedLlmProvider
-from passagen.llm import LlmProviderError, LlmResponse
+from passagen.providers import (
+    LlmCallStats,
+    LlmProviderError,
+    LlmResponse,
+    LlmStage,
+    TrackedLlmProvider,
+)
 
 
 class FakeProvider:

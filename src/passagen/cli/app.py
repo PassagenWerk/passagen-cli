@@ -17,16 +17,13 @@ from passagen.cli.logging import (
     set_execution_log_level,
 )
 from passagen.config import ConfigError, ParserBackend, Settings, load_settings
-from passagen.db import backup_database, current_version, initialize_database
-from passagen.external import LlmCallStats, LlmStage
-from passagen.maintenance import check_artifacts
-from passagen.models import PaperStatus
+from passagen.domain import PaperStatus
 from passagen.prompting import (
     PromptTemplateError,
     load_outline_prompt_template,
     load_summary_prompt_templates,
 )
-from passagen.providers import ProviderHealthSnapshot, check_provider_health
+from passagen.providers import LlmCallStats, LlmStage, ProviderHealthSnapshot, check_provider_health
 from passagen.stages.metadata import MetadataResolutionError, resolve_paper_metadata
 from passagen.stages.outlining import OutlineError, outline_paper
 from passagen.stages.parsing import PaperParsingError, parse_paper
@@ -34,6 +31,8 @@ from passagen.stages.running import run_pipeline
 from passagen.stages.scanning import ScanDirectoryError, scan_directory
 from passagen.stages.summarization import SummaryError, summarize_paper
 from passagen.stages.updating import UpdateTargetError, update_papers
+from passagen.storage.database import backup_database, current_version, initialize_database
+from passagen.storage.maintenance import check_artifacts
 from passagen.storage.repository import (
     DatabaseNotInitializedError,
     PaperRecord,
