@@ -26,8 +26,8 @@
 - `Typer`：CLI
 - `Pydantic` 和 `pydantic-settings`：Schema 与配置
 - `PyYAML`：分区 YAML 配置解析
-- Python 标准库 `sqlite3`：持久化、显式 SQL 和事务
-- SQLite `PRAGMA user_version`：轻量 Schema 版本管理
+- SQLAlchemy 2.0：typed ORM、repository 和短 Session 事务
+- Alembic：只向前执行的 Schema migration，并同步 SQLite `PRAGMA user_version`
 - `httpx`：GROBID、Crossref、arXiv 和 OpenAI-compatible LLM API 请求
 - Python 标准库 XML parser：GROBID TEI XML 解析
 - `PyMuPDF`：轻量及降级 PDF 解析
@@ -38,12 +38,12 @@
 
 ## 数据库 Schema 策略
 
-v0.1 发布前数据库视为可重建的开发数据，采用以下规则：
+数据库 Schema 采用以下规则：
 
 - `SCHEMA_VERSION` 保持为 `1`，当前完整表结构直接维护在初始 Schema 中。
 - Roadmap 阶段、代码模块或配置变化不触发 Schema version 递增。
-- 表结构变化时同步修改初始 Schema 和测试；本地旧数据库通过删除 `data/passagen.db` 后重新初始化。
-- 发布前不保留只服务于早期开发数据库的 v1→v2→v3 等增量 migration。
+- 已提交的 Alembic revision 不再修改；表结构变化通过新的 forward migration 完成。
+- 现有无 Alembic 标记的 Schema v1 经校验后原地 stamp，不要求删除或重建数据库。
 
 满足以下任一条件后开始维护只向前执行的 migration：
 

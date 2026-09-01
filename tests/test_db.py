@@ -12,6 +12,7 @@ from passagen.db import (
     current_version,
     initialize_database,
 )
+from passagen.storage.migrations import alembic_revision, head_revision
 
 
 def insert_paper(connection: sqlite3.Connection, paper_id: str, sha256: str) -> None:
@@ -47,6 +48,35 @@ def test_initialize_database_creates_current_schema(tmp_path: Path) -> None:
     assert {"papers", "artifacts", "processing_runs", "llm_calls"} <= tables
     assert "metadata_sources_json" in paper_columns
     assert "size_bytes" in artifact_columns
+    assert alembic_revision(database_path) == head_revision()
+
+
+def test_initialize_database_stamps_existing_v1_without_losing_data(tmp_path: Path) -> None:
+    database_path = tmp_path / "passagen.db"
+    initialize_database(database_path)
+    with connect_database(database_path) as connection:
+        insert_paper(connection, "paper-1", "a" * 64)
+        connection.execute("DROP TABLE alembic_version")
+
+    initialize_database(database_path)
+
+    with connect_database(database_path) as connection:
+        row = connection.execute("SELECT id, pdf_sha256 FROM papers").fetchone()
+    assert row is not None
+    assert tuple(row) == ("paper-1", "a" * 64)
+    assert current_version(database_path) == SCHEMA_VERSION
+    assert alembic_revision(database_path) == head_revision()
+
+
+def test_initialize_database_rejects_unversioned_existing_schema(tmp_path: Path) -> None:
+    database_path = tmp_path / "passagen.db"
+    initialize_database(database_path)
+    with connect_database(database_path) as connection:
+        connection.execute("DROP TABLE alembic_version")
+        connection.execute("PRAGMA user_version = 0")
+
+    with pytest.raises(DatabaseVersionError, match="incomplete or unsupported"):
+        initialize_database(database_path)
 
 
 def test_sha256_is_unique(tmp_path: Path) -> None:

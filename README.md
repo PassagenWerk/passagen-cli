@@ -369,6 +369,10 @@ pipeline:
 | `passagen artifacts check` | 检查 artifact 路径、大小和 SHA-256。 |
 | `passagen logs clean` | 将历史执行日志归档到 `logs/old/`。 |
 
+SQLite 访问集中在 `passagen.storage`：SQLAlchemy 2.0 ORM 负责查询与短事务，内嵌
+Alembic revision 负责 Schema 升级。`db init` 对新库创建完整 Schema；已有 Schema v1
+会先经过结构和完整性检查，再原地登记 migration 版本，不会重建业务表。
+
 所有命令都可以使用 `--help` 查看参数：
 
 ```bash

@@ -13,8 +13,8 @@
 | `src/passagen/cli/` | Typer composition root、配置错误呈现、命令和 execution logging |
 | `src/passagen/config/` | 配置模型、优先级合并和运行时校验 |
 | `src/passagen/models.py` | Paper 状态与基础领域模型 |
-| `src/passagen/db.py` | SQLite 连接、事务和 Schema migration |
-| `src/passagen/repository.py` | Paper/PDF artifact 持久化、查询和 row mapping |
+| `src/passagen/db.py` | 数据库初始化、状态、在线备份和底层兼容入口 |
+| `src/passagen/storage/` | SQLAlchemy ORM、Session 事务、repository 和 Alembic migration |
 | `src/passagen/metadata.py` | 轻量 PDF 标识提取、GROBID/Crossref/arXiv adapter 和字段合并 |
 | `src/passagen/parsing.py` | ParsedPaper contract、GROBID fulltext 与 PyMuPDF parser |
 | `src/passagen/llm.py` | OpenAI-compatible LLM adapter 与统一响应 contract |
@@ -114,9 +114,9 @@ domain -> Python standard library only
 | 外部配置 | Pydantic Settings | 文件、环境变量和 CLI override 校验 |
 | 外部响应 DTO | Pydantic model 或局部解析函数 | 隔离供应商字段和缺失值 |
 | ParsedPaper / StructuredSummary | Pydantic model | artifact Schema、版本化和 JSON 校验 |
-| 数据库记录 | 显式 row mapper | SQL row 与领域对象转换 |
+| 数据库记录 | SQLAlchemy typed ORM + dataclass projection | 持久化映射与领域读取模型转换 |
 
-禁止把未经校验的 `dict[str, Any]` 跨模块传递。外部字典应在 adapter 边界转换，artifact 应带 `schema` 与 `version`，数据库结构由 `PRAGMA user_version` 管理。
+禁止把未经校验的 `dict[str, Any]` 跨模块传递。外部字典应在 adapter 边界转换，artifact 应带 `schema` 与 `version`，数据库结构由内嵌 Alembic revision 管理，并同步维护供 CLI 展示的 `PRAGMA user_version`。
 
 ## Pipeline 编排
 
@@ -146,11 +146,11 @@ Pipeline 不应把所有中间对象堆成一个不断扩张的 context 字段�
 
 ## 持久化与事务
 
-- repository 负责 SQL 与 row mapping，领域层不拼接 SQL。
+- `storage.repository` 负责 ORM 查询和领域读取模型转换，领域层不操作 Session 或拼接 SQL。
 - 默认配置路径和 `data_dir` 以当前工作目录为根；不得在 adapter 内回退到用户 Home 目录。
-- v0.1 发布前直接维护可重建的完整 Schema v1；发布后 migration 才按整数版本只向前执行。
+- Alembic migration 只向前执行；现有 Schema v1 经完整性和结构校验后原地 stamp，不重建业务表。
 - 数据库版本高于程序支持版本时立即拒绝运行。
-- SQLite connection 统一启用 foreign keys、WAL 和 busy timeout。
+- SQLAlchemy engine 的每个 SQLite connection 统一启用 foreign keys、WAL 和 busy timeout。
 - 数据库事务只覆盖数据库操作，不在持有写事务时调用 GROBID、Crossref、arXiv 或 LLM。
 - artifact 路径相对 `data_dir` 保存，不能持久化扫描源目录的绝对路径。
 - 原始 PDF 使用 SHA-256 内容寻址并视为不可变对象；解析阶段只读取受管理副本。

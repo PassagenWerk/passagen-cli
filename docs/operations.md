@@ -14,8 +14,10 @@ uv run passagen db init
 Runtime data is stored below the configured `data_dir`. The local `passagen.yaml`, database,
 artifacts, logs, and generated distributions are excluded from Git.
 
-Before the first stable release, database Schema v1 is intentionally rebuildable. When the
-development Schema changes, remove the old local `data/passagen.db` and import the PDFs again.
+Database migrations are bundled with the installed package. `passagen db init` creates a new
+database or upgrades an existing one in place; a legacy Schema v1 database is validated and
+stamped without rebuilding its application tables. Use `passagen db backup` before moving or
+manually modifying a database.
 
 ## GROBID
 

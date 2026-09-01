@@ -11,7 +11,7 @@ from passagen.cli import app
 from passagen.db import SCHEMA_VERSION
 from passagen.llm import LlmResponse
 from passagen.providers import ProviderHealthSnapshot, ProviderStatus
-from passagen.repository import list_papers
+from passagen.storage.repository import list_papers
 
 runner = CliRunner()
 

@@ -13,9 +13,9 @@ from passagen.external import LlmCallStats, LlmStage
 from passagen.llm import LlmResponse
 from passagen.models import Paper, PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
-from passagen.repository import register_pdf, save_parsed_artifact
 from passagen.stages.summarization import StructuredSummary, SummaryError, summarize_paper
 from passagen.stages.updating import update_papers
+from passagen.storage.repository import register_pdf, save_parsed_artifact
 
 
 class FakeProvider:

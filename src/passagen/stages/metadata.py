@@ -20,14 +20,14 @@ from passagen.metadata import (
 )
 from passagen.models import PaperStatus
 from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
-from passagen.repository import (
+from passagen.stages.progress import ProgressCallback, report_progress
+from passagen.storage.repository import (
     MetadataConflictError,
     PaperRecord,
     get_paper,
     update_paper_metadata,
     update_paper_status,
 )
-from passagen.stages.progress import ProgressCallback, report_progress
 
 logger = logging.getLogger(__name__)
 

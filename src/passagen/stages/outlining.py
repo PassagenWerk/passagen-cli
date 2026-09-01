@@ -28,7 +28,9 @@ from passagen.prompting import (
     load_outline_prompt_template,
 )
 from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
-from passagen.repository import (
+from passagen.stages.progress import ProgressCallback, report_progress
+from passagen.stages.summarization import SUMMARY_SCHEMA_VERSION, StructuredSummary
+from passagen.storage.repository import (
     ArtifactRecord,
     PaperRecord,
     finish_processing_run,
@@ -39,8 +41,6 @@ from passagen.repository import (
     start_processing_run,
     update_paper_status,
 )
-from passagen.stages.progress import ProgressCallback, report_progress
-from passagen.stages.summarization import SUMMARY_SCHEMA_VERSION, StructuredSummary
 
 logger = logging.getLogger(__name__)
 OUTLINE_SCHEMA_VERSION = "2"

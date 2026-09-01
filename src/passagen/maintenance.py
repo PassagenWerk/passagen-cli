@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from passagen.repository import ArtifactRecord, list_artifacts
+from passagen.storage.repository import ArtifactRecord, list_artifacts
 
 _HASH_CHUNK_SIZE = 1024 * 1024
 

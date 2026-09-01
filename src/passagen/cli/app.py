@@ -27,13 +27,6 @@ from passagen.prompting import (
     load_summary_prompt_templates,
 )
 from passagen.providers import ProviderHealthSnapshot, check_provider_health
-from passagen.repository import (
-    DatabaseNotInitializedError,
-    PaperRecord,
-    get_artifact,
-    get_paper,
-    list_papers,
-)
 from passagen.stages.metadata import MetadataResolutionError, resolve_paper_metadata
 from passagen.stages.outlining import OutlineError, outline_paper
 from passagen.stages.parsing import PaperParsingError, parse_paper
@@ -41,6 +34,13 @@ from passagen.stages.running import run_pipeline
 from passagen.stages.scanning import ScanDirectoryError, scan_directory
 from passagen.stages.summarization import SummaryError, summarize_paper
 from passagen.stages.updating import UpdateTargetError, update_papers
+from passagen.storage.repository import (
+    DatabaseNotInitializedError,
+    PaperRecord,
+    get_artifact,
+    get_paper,
+    list_papers,
+)
 
 app = typer.Typer(help="Manage paper PDFs and generate validated English research artifacts.")
 config_app = typer.Typer(help="Inspect Passagen configuration and prompt templates.")

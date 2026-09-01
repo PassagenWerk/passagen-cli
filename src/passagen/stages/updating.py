@@ -10,12 +10,12 @@ from passagen.external import LlmCallStats
 from passagen.llm import LlmProvider
 from passagen.models import PaperStatus
 from passagen.providers import ProviderHealthSnapshot
-from passagen.repository import PaperRecord, get_paper, list_papers
 from passagen.stages.metadata import MetadataResolutionError, resolve_paper_metadata
 from passagen.stages.outlining import OutlineError, outline_paper
 from passagen.stages.parsing import PaperParsingError, parse_paper
 from passagen.stages.progress import ProgressCallback, report_progress
 from passagen.stages.summarization import SummaryError, summarize_paper
+from passagen.storage.repository import PaperRecord, get_paper, list_papers
 
 LATEST_IMPLEMENTED_STATUS = PaperStatus.OUTLINED
 _UPDATE_PENDING_STATUSES = {

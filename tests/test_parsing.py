@@ -9,9 +9,9 @@ from passagen.metadata import BibliographicMetadata
 from passagen.models import PaperStatus
 from passagen.parsing import GrobidFulltextParser, ParsingError, PyMuPdfParser
 from passagen.providers import ProviderHealthSnapshot, ProviderStatus
-from passagen.repository import update_paper_metadata
 from passagen.stages.parsing import PaperParsingError, parse_paper
 from passagen.stages.scanning import scan_directory
+from passagen.storage.repository import update_paper_metadata
 
 
 def write_structured_pdf(path: Path) -> None:

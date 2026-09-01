@@ -7,11 +7,13 @@ license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.14,<2",
     "httpx>=0.28,<1",
     "pydantic-settings>=2.8,<3",
     "pymupdf>=1.25,<2",
     "pyyaml>=6,<7",
     "rich>=13.9,<15",
+    "sqlalchemy>=2.0,<3",
     "typer>=0.15,<1",
 ]
 

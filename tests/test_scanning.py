@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 import passagen.stages.scanning
-from passagen.repository import list_papers
 from passagen.stages.scanning import ScanDirectoryError, scan_directory
+from passagen.storage.repository import list_papers
 
 
 def write_pdf(path: Path, content: bytes = b"content") -> bytes:

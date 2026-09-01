@@ -15,7 +15,8 @@ from passagen.parsing import (
     PyMuPdfParser,
 )
 from passagen.providers import ProviderHealthSnapshot, ProviderUnavailableError
-from passagen.repository import (
+from passagen.stages.progress import ProgressCallback, report_progress
+from passagen.storage.repository import (
     ArtifactRecord,
     PaperRecord,
     get_artifact,
@@ -23,7 +24,6 @@ from passagen.repository import (
     save_parsed_artifact,
     update_paper_status,
 )
-from passagen.stages.progress import ProgressCallback, report_progress
 
 logger = logging.getLogger(__name__)
 EXTRACTED_ARTIFACT_KIND = "extracted_json"

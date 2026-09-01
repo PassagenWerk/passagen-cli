@@ -391,7 +391,7 @@ pipeline:
 
 ## 数据存储
 
-SQLite 保存论文索引、处理状态和外部调用记录，本地文件系统保存 PDF 及生成产物。默认根目录是当前工作目录下的 `data/`。程序直接使用 Python 标准库 `sqlite3` 和显式 SQL，通过 `PRAGMA user_version` 管理 Schema 版本：
+SQLite 保存论文索引、处理状态和外部调用记录，本地文件系统保存 PDF 及生成产物。默认根目录是当前工作目录下的 `data/`。程序通过 SQLAlchemy 2.0 typed ORM 和短 Session 事务访问 SQLite，使用内嵌 Alembic revision 管理 Schema，并同步 `PRAGMA user_version` 供 CLI 展示：
 
 ```text
 data/

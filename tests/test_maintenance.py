@@ -6,7 +6,7 @@ from pathlib import Path
 from passagen.db import backup_database, connect_database, initialize_database
 from passagen.maintenance import check_artifacts
 from passagen.models import Paper
-from passagen.repository import register_pdf
+from passagen.storage.repository import register_pdf
 
 
 def test_database_backup_is_a_consistent_sqlite_copy(tmp_path: Path) -> None:

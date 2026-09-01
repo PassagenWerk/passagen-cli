@@ -8,15 +8,17 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from passagen.db import initialize_database
 from passagen.models import Paper
-from passagen.repository import (
+from passagen.stages.progress import ProgressCallback, report_progress
+from passagen.storage.repository import (
     PaperRecord,
     find_paper_by_sha256,
     managed_path_is_referenced,
     register_pdf,
 )
-from passagen.stages.progress import ProgressCallback, report_progress
 
 _COPY_CHUNK_SIZE = 1024 * 1024
 _PDF_HEADER_SIZE = 1024
@@ -87,7 +89,7 @@ def scan_directory(
         )
         try:
             record, created = _import_pdf(source_path, managed_root, database_path)
-        except (InvalidPdfError, OSError, RuntimeError, sqlite3.Error) as exc:
+        except (InvalidPdfError, OSError, RuntimeError, sqlite3.Error, SQLAlchemyError) as exc:
             logger.error("scan import failed: file=%s error=%s", source_path, exc)
             result.failures.append(ScanFailure(source_path, str(exc)))
             report_progress(
