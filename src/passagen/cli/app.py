@@ -9,7 +9,17 @@ from typing import Annotated
 import typer
 
 from passagen import __version__
-from passagen.cli.commands import artifacts, config, db, ingestion, logs, query, stages, update
+from passagen.cli.commands import (
+    artifacts,
+    config,
+    db,
+    health,
+    ingestion,
+    logs,
+    query,
+    stages,
+    update,
+)
 from passagen.cli.logging import configure_execution_logging, set_execution_log_level
 from passagen.cli.runtime import AppState, console, finish_execution
 from passagen.config import ConfigError, load_settings
@@ -52,6 +62,9 @@ app.command(
 )(stages.outline_command)
 app.command("show", help="Show paper metadata, last successful stage, and managed artifact paths.")(
     query.show
+)
+app.command("check", help="Check external service reachability and print the results.")(
+    health.check_command
 )
 app.add_typer(config.config_app, name="config")
 app.add_typer(db.db_app, name="db")

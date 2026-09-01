@@ -111,6 +111,55 @@ def test_version_uses_package_metadata() -> None:
     assert result.stdout.strip() == version("passagen")
 
 
+def _health_snapshot(*available: str, unavailable: str) -> ProviderHealthSnapshot:
+    statuses = {
+        name: ProviderStatus(name, True, "HTTP 200")
+        for name in ("arxiv", "crossref", "grobid", "llm")
+        if name in available
+    }
+    if unavailable:
+        statuses[unavailable] = ProviderStatus(unavailable, False, "connection refused")
+    return ProviderHealthSnapshot(statuses)
+
+
+def test_check_reports_reachable_providers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "passagen.yaml"
+    write_offline_config(config_path)
+    monkeypatch.setattr(
+        "passagen.cli.commands.health.check_provider_health",
+        lambda _settings: _health_snapshot("arxiv", "crossref", "grobid", "llm", unavailable=""),
+    )
+
+    result = runner.invoke(app, ["--config", str(config_path), "check"])
+
+    assert result.exit_code == 0
+    for name in ("arxiv", "crossref", "grobid", "llm"):
+        assert name in result.output
+    assert "unavailable" not in result.output
+
+
+def test_check_fails_when_a_provider_is_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "passagen.yaml"
+    write_offline_config(config_path)
+    monkeypatch.setattr(
+        "passagen.cli.commands.health.check_provider_health",
+        lambda _settings: _health_snapshot("arxiv", "crossref", "llm", unavailable="grobid"),
+    )
+
+    result = runner.invoke(app, ["--config", str(config_path), "check"])
+
+    assert result.exit_code == 1
+    assert "grobid" in result.output
+    assert "unavailable" in result.output
+    assert "connection refused" in result.output
+
+
 @pytest.mark.parametrize(
     ("arguments", "description"),
     [
