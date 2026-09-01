@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from passagen.config import LlmSettings, PipelineSettings, ProvidersSettings, SummarizationSettings
 from passagen.db import connect_database, initialize_database
+from passagen.external import LlmCallStats, LlmStage
 from passagen.llm import LlmResponse
 from passagen.models import Paper, PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
@@ -111,6 +112,7 @@ def test_summary_v2_separates_subject_and_baseline_values() -> None:
 def test_summarize_saves_validated_json_yaml_and_call_audit(tmp_path: Path) -> None:
     database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
     provider = FakeProvider(['{"facts": ["A test paper"]}', valid_summary()])
+    stats = LlmCallStats()
 
     result = summarize_paper(
         database_path,
@@ -120,6 +122,7 @@ def test_summarize_saves_validated_json_yaml_and_call_audit(tmp_path: Path) -> N
         SummarizationSettings(),
         provider=provider,
         execution_log_dir=tmp_path / "logs" / "run",
+        llm_stats=stats,
     )
 
     assert result.updated is True
@@ -133,6 +136,9 @@ def test_summarize_saves_validated_json_yaml_and_call_audit(tmp_path: Path) -> N
     assert fact_call["prompt"]
     assert fact_call["response"] == '{"facts": ["A test paper"]}'
     assert fact_call["max_tokens"] == 1500
+    assert stats.by_stage[LlmStage.FACT].calls == 1
+    assert stats.by_stage[LlmStage.SUMMARY].calls == 1
+    assert stats.total.total_tokens == 30
     with connect_database(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0] == 2
         assert connection.execute("SELECT status FROM processing_runs").fetchone()[0] == "completed"
@@ -192,6 +198,72 @@ def test_summarize_keeps_raw_response_when_repair_fails(tmp_path: Path) -> None:
     with connect_database(database_path) as connection:
         assert connection.execute("SELECT status FROM processing_runs").fetchone()[0] == "failed"
         assert connection.execute("SELECT status FROM papers").fetchone()[0] == "parsed"
+
+
+def test_summarize_retries_truncated_facts_with_more_output_tokens(tmp_path: Path) -> None:
+    database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
+
+    class TruncatingProvider(FakeProvider):
+        def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse:
+            self.prompts.append(prompt)
+            content = self.responses.pop(0)
+            truncated = len(self.prompts) == 1
+            return LlmResponse(
+                content,
+                input_tokens=10,
+                output_tokens=5,
+                finish_reason="length" if truncated else "stop",
+            )
+
+    provider = TruncatingProvider(
+        ['{"facts": ["truncat', '{"facts": ["A test paper"]}', valid_summary()]
+    )
+
+    result = summarize_paper(
+        database_path,
+        data_dir,
+        paper_id,
+        LlmSettings(),
+        SummarizationSettings(),
+        provider=provider,
+        execution_log_dir=tmp_path / "logs" / "run",
+    )
+
+    assert result.updated is True
+    assert len(provider.prompts) == 3
+    call_dir = tmp_path / "logs" / "run" / "external" / "llm" / paper_id
+    assert (call_dir / "facts-001.json").is_file()
+    retry_call = json.loads((call_dir / "facts-001-retry-2.json").read_text(encoding="utf-8"))
+    assert retry_call["max_tokens"] == 3000
+
+
+def test_summarize_fails_when_facts_stay_truncated(tmp_path: Path) -> None:
+    database_path, data_dir, paper_id = setup_parsed_paper(tmp_path)
+
+    class AlwaysTruncatingProvider(FakeProvider):
+        def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse:
+            self.prompts.append(prompt)
+            return LlmResponse(
+                '{"facts": ["truncat',
+                input_tokens=10,
+                output_tokens=5,
+                finish_reason="length",
+            )
+
+    with pytest.raises(SummaryError, match="Extracted facts failed schema validation"):
+        summarize_paper(
+            database_path,
+            data_dir,
+            paper_id,
+            LlmSettings(),
+            SummarizationSettings(),
+            provider=AlwaysTruncatingProvider([]),
+            execution_log_dir=tmp_path / "logs" / "run",
+        )
+
+    call_dir = tmp_path / "logs" / "run" / "external" / "llm" / paper_id
+    assert (call_dir / "facts-001-retry-3.json").is_file()
+    assert json.loads((call_dir / "facts-001-retry-3.json").read_text())["max_tokens"] == 6000
 
 
 def test_summarize_reuses_successful_section_facts_when_forced(tmp_path: Path) -> None:

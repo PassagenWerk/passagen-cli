@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from passagen.config import PipelineSettings, ProvidersSettings
+from passagen.external import LlmCallStats
 from passagen.llm import LlmProvider
 from passagen.providers import ProviderHealthSnapshot
 from passagen.stages.progress import ProgressCallback
@@ -30,6 +31,7 @@ def run_pipeline(
     summary_provider: LlmProvider | None = None,
     outline_provider: LlmProvider | None = None,
     progress: ProgressCallback | None = None,
+    llm_stats: LlmCallStats | None = None,
 ) -> PipelineRunResult:
     scan = scan_directory(
         directory,
@@ -48,5 +50,6 @@ def run_pipeline(
         provider_health=provider_health,
         execution_log_dir=execution_log_dir,
         progress=progress,
+        llm_stats=llm_stats,
     )
     return PipelineRunResult(scan, update)

@@ -297,6 +297,10 @@ LLM 同时用于：
 
 请求使用 `temperature: 0` 和 JSON object response format。所有响应仍会经过本地 Pydantic 校验。
 
+执行 `run`、`update`、`summarize` 或 `outline` 后，CLI 会输出本次运行的 LLM 调用统计，
+包括总调用次数、input/output/total token，以及 `fact`、`summary`、`outline` 各阶段明细。
+facts 截断重试和 summary 修复均按实际请求次数统计；该统计仅保存在当前进程内，不写入数据库。
+
 ## Pipeline 参数
 
 | 配置 | 说明 |

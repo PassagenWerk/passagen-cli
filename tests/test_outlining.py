@@ -8,6 +8,7 @@ import pytest
 
 from passagen.config import LlmSettings, OutliningSettings
 from passagen.db import connect_database, initialize_database
+from passagen.external import LlmCallStats, LlmStage
 from passagen.llm import LlmResponse
 from passagen.models import Paper, PaperStatus
 from passagen.repository import get_artifact, register_pdf, save_summary_artifacts
@@ -106,6 +107,7 @@ def valid_outline() -> str:
 def test_outline_saves_markdown_source_and_call_audit(tmp_path: Path) -> None:
     database_path, data_dir, paper_id = setup_summarized_paper(tmp_path)
     provider = FakeProvider(valid_outline())
+    stats = LlmCallStats()
 
     result = outline_paper(
         database_path,
@@ -115,11 +117,14 @@ def test_outline_saves_markdown_source_and_call_audit(tmp_path: Path) -> None:
         OutliningSettings(max_output_tokens=1200),
         provider=provider,
         execution_log_dir=tmp_path / "logs" / "run",
+        llm_stats=stats,
     )
 
     assert result.updated is True
     assert result.paper.status is PaperStatus.OUTLINED
     assert provider.max_tokens == [1200]
+    assert stats.by_stage[LlmStage.OUTLINE].calls == 1
+    assert stats.total.total_tokens == 30
     markdown = (data_dir / "papers" / paper_id / "outline.md").read_text()
     assert "# Test Paper: Technical Outline" in markdown
     assert "## Introduction" in markdown

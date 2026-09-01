@@ -6,6 +6,7 @@ from functools import partial
 from pathlib import Path
 
 from passagen.config import PipelineSettings, ProvidersSettings
+from passagen.external import LlmCallStats
 from passagen.llm import LlmProvider
 from passagen.models import PaperStatus
 from passagen.providers import ProviderHealthSnapshot
@@ -58,6 +59,7 @@ def update_papers(
     execution_log_dir: Path | None = None,
     force: bool = False,
     progress: ProgressCallback | None = None,
+    llm_stats: LlmCallStats | None = None,
 ) -> UpdateResult:
     papers = _select_papers(database_path, paper_id)
     target_status = LATEST_IMPLEMENTED_STATUS
@@ -211,6 +213,7 @@ def update_papers(
                         stage_number=stage_number,
                         stage_total=stage_total,
                     ),
+                    llm_stats=llm_stats,
                 )
                 current = summary.paper
                 logger.info("update stage finished: paper_id=%s stage=summarize", paper.id)
@@ -247,6 +250,7 @@ def update_papers(
                         stage_number=stage_number,
                         stage_total=stage_total,
                     ),
+                    llm_stats=llm_stats,
                 )
                 current = outlined.paper
                 logger.info("update stage finished: paper_id=%s stage=outline", paper.id)

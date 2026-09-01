@@ -38,7 +38,7 @@ pipeline:
     min_text_characters: 10
   summarization:
     max_chunk_characters: 96000
-    fact_max_output_tokens: 3000
+    fact_max_output_tokens: 6000
     summary_max_output_tokens: 6000
     # null selects packaged prompts; custom templates must retain the documented placeholders
     facts_prompt_path: null

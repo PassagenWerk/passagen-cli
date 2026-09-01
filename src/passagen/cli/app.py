@@ -18,6 +18,7 @@ from passagen.cli.logging import (
 )
 from passagen.config import ConfigError, ParserBackend, Settings, load_settings
 from passagen.db import backup_database, current_version, initialize_database
+from passagen.external import LlmCallStats, LlmStage
 from passagen.maintenance import check_artifacts
 from passagen.models import PaperStatus
 from passagen.prompting import (
@@ -60,10 +61,12 @@ class AppState:
         settings: Settings,
         execution_log_dir: Path,
         provider_health: ProviderHealthSnapshot,
+        llm_stats: LlmCallStats,
     ) -> None:
         self.settings = settings
         self.execution_log_dir = execution_log_dir
         self.provider_health = provider_health
+        self.llm_stats = llm_stats
 
 
 class ConsoleProgress:
@@ -139,8 +142,9 @@ def main(
             status.available,
             status.detail,
         )
-    ctx.call_on_close(lambda: logger.info("execution finished: command=%s", command))
-    ctx.obj = AppState(settings, execution_log_dir, provider_health)
+    state = AppState(settings, execution_log_dir, provider_health, LlmCallStats())
+    ctx.call_on_close(lambda: _finish_execution(command, state))
+    ctx.obj = state
 
 
 @config_app.command(
@@ -348,6 +352,7 @@ def run_command(
                 provider_health=state.provider_health,
                 execution_log_dir=state.execution_log_dir,
                 progress=progress.update,
+                llm_stats=_state(ctx).llm_stats,
             )
     except ScanDirectoryError as exc:
         logger.error("run command failed during scan: %s", exc)
@@ -450,7 +455,8 @@ def update_command(
         typer.Option(help="Rebuild every stage from metadata to the current target."),
     ] = False,
 ) -> None:
-    settings = _state(ctx).settings
+    state = _state(ctx)
+    settings = state.settings
     try:
         with ConsoleProgress(console, "Preparing update...") as progress:
             result = update_papers(
@@ -463,6 +469,7 @@ def update_command(
                 execution_log_dir=_state(ctx).execution_log_dir,
                 force=force,
                 progress=progress.update,
+                llm_stats=state.llm_stats,
             )
     except (DatabaseNotInitializedError, UpdateTargetError) as exc:
         logger.error("update command failed: target=%s error=%s", paper_id or "all", exc)
@@ -547,7 +554,8 @@ def summarize_command(
     paper_id: Annotated[str, typer.Argument(help="Paper ID.")],
     force: Annotated[bool, typer.Option(help="Rebuild an existing summary.")] = False,
 ) -> None:
-    settings = _state(ctx).settings
+    state = _state(ctx)
+    settings = state.settings
     try:
         with ConsoleProgress(console, f"Summarizing {paper_id}...") as progress:
             result = summarize_paper(
@@ -560,6 +568,7 @@ def summarize_command(
                 execution_log_dir=_state(ctx).execution_log_dir,
                 force=force,
                 progress=progress.update,
+                llm_stats=state.llm_stats,
             )
     except (DatabaseNotInitializedError, SummaryError) as exc:
         logger.error("summarize command failed: paper_id=%s error=%s", paper_id, exc)
@@ -597,6 +606,7 @@ def outline_command(
                 execution_log_dir=state.execution_log_dir,
                 force=force,
                 progress=progress.update,
+                llm_stats=state.llm_stats,
             )
     except (DatabaseNotInitializedError, OutlineError) as exc:
         logger.error("outline command failed: paper_id=%s error=%s", paper_id, exc)
@@ -677,3 +687,36 @@ def _state(ctx: typer.Context) -> AppState:
     if not isinstance(state, AppState):
         raise RuntimeError("Application state is not initialized")
     return state
+
+
+def _finish_execution(command: str, state: AppState) -> None:
+    usage = state.llm_stats.total
+    if usage.calls:
+        table = Table(title="LLM usage")
+        table.add_column("Stage")
+        table.add_column("Calls", justify="right")
+        table.add_column("Total tokens", justify="right")
+        table.add_column("Input tokens", justify="right")
+        table.add_column("Output tokens", justify="right")
+        rows = [
+            ("total", usage),
+            *((stage.value, state.llm_stats.by_stage[stage]) for stage in LlmStage),
+        ]
+        for stage, stage_usage in rows:
+            table.add_row(
+                stage,
+                str(stage_usage.calls),
+                str(stage_usage.total_tokens),
+                str(stage_usage.input_tokens),
+                str(stage_usage.output_tokens),
+            )
+            logger.info(
+                "llm usage: stage=%s calls=%s total_tokens=%s input_tokens=%s output_tokens=%s",
+                stage,
+                stage_usage.calls,
+                stage_usage.total_tokens,
+                stage_usage.input_tokens,
+                stage_usage.output_tokens,
+            )
+        console.print(table)
+    logger.info("execution finished: command=%s", command)

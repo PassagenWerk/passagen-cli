@@ -19,6 +19,7 @@ from pydantic import (
 )
 
 from passagen.config import LlmSettings, OutliningSettings
+from passagen.external import LlmCallStats, LlmStage, TrackedLlmProvider
 from passagen.llm import LlmProvider, LlmProviderError, OpenAICompatibleProvider
 from passagen.models import PaperStatus
 from passagen.prompting import (
@@ -131,6 +132,7 @@ def outline_paper(
     provider: LlmProvider | None = None,
     execution_log_dir: Path | None = None,
     progress: ProgressCallback | None = None,
+    llm_stats: LlmCallStats | None = None,
 ) -> OutlineResult:
     paper = get_paper(database_path, paper_id)
     if paper is None:
@@ -164,7 +166,7 @@ def outline_paper(
         except ProviderUnavailableError as exc:
             raise OutlineError(str(exc)) from exc
     try:
-        llm = provider or OpenAICompatibleProvider(settings)
+        llm = TrackedLlmProvider(provider or OpenAICompatibleProvider(settings), llm_stats)
     except LlmProviderError as exc:
         raise OutlineError(str(exc)) from exc
     run_id = start_processing_run(database_path, paper_id, "outline")
@@ -177,7 +179,7 @@ def outline_paper(
     report_progress(progress, "Generating English outline...")
     raw_response: str | None = None
     try:
-        response = llm.generate(prompt, max_tokens=outlining.max_output_tokens)
+        response = llm.generate(LlmStage.OUTLINE, prompt, max_tokens=outlining.max_output_tokens)
         raw_response = response.content
         record_llm_call(
             database_path,
@@ -297,7 +299,7 @@ def _render_markdown(title: str, outline: PaperOutline) -> str:
 def _write_diagnostic(
     path: Path | None,
     prompt: str,
-    provider: LlmProvider,
+    provider: TrackedLlmProvider,
     max_tokens: int,
     response: str | None = None,
     error: str | None = None,

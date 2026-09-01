@@ -1,4 +1,5 @@
 import importlib
+import re
 from importlib.metadata import version
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from passagen.cli import app
+from passagen.db import SCHEMA_VERSION
 from passagen.llm import LlmResponse
 from passagen.providers import ProviderHealthSnapshot, ProviderStatus
 from passagen.repository import list_papers
@@ -50,12 +52,18 @@ class _FakeLlmProvider:
         del max_tokens
         type(self).calls += 1
         if "Extract evidence-backed facts" in prompt:
-            return LlmResponse('{"facts": []}')
+            return LlmResponse('{"facts": []}', input_tokens=10, output_tokens=5)
         if "Create a detailed English technical-paper outline" in prompt:
             return LlmResponse(
-                '{"introduction":{"thesis":"The paper introduces a test problem.","points":[]}}'
+                '{"introduction":{"thesis":"The paper introduces a test problem.","points":[]}}',
+                input_tokens=10,
+                output_tokens=5,
             )
-        return LlmResponse('{"identity": {"title": "Test", "authors": []}}')
+        return LlmResponse(
+            '{"identity": {"title": "Test", "authors": []}}',
+            input_tokens=10,
+            output_tokens=5,
+        )
 
 
 def write_metadata_pdf(path: Path, title: str, text: str = "Paper body") -> None:
@@ -164,7 +172,7 @@ def test_database_init_and_status(tmp_path: Path) -> None:
 
     result = runner.invoke(app, ["--data-dir", str(data_dir), "db", "status"])
     assert result.exit_code == 0
-    assert "schema version: 1" in result.stdout
+    assert f"schema version: {SCHEMA_VERSION}" in result.stdout
 
 
 def test_database_backup_and_artifact_check_commands(tmp_path: Path) -> None:
@@ -372,6 +380,11 @@ def test_run_is_idempotent_and_does_not_repeat_llm_calls(tmp_path: Path) -> None
 
     assert first.exit_code == 0
     assert "Imported: 1" in first.stdout
+    assert "LLM usage" in first.stdout
+    assert re.search(r"total\D+3\D+45\D+30\D+15", first.stdout)
+    assert re.search(r"fact\D+1\D+15\D+10\D+5", first.stdout)
+    assert re.search(r"summary\D+1\D+15\D+10\D+5", first.stdout)
+    assert re.search(r"outline\D+1\D+15\D+10\D+5", first.stdout)
     assert list_papers(data_dir / "passagen.db")[0].status.value == "outlined"
     first_call_count = _FakeLlmProvider.calls
     assert first_call_count == 3

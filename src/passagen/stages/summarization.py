@@ -13,6 +13,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from passagen.config import LlmSettings, SummarizationSettings
+from passagen.external import LlmCallStats, LlmStage, TrackedLlmProvider
 from passagen.llm import LlmProvider, LlmProviderError, LlmResponse, OpenAICompatibleProvider
 from passagen.models import PaperStatus
 from passagen.parsing import ParsedPaper, ParsedSection
@@ -287,6 +288,7 @@ def summarize_paper(
     provider: LlmProvider | None = None,
     execution_log_dir: Path | None = None,
     progress: ProgressCallback | None = None,
+    llm_stats: LlmCallStats | None = None,
 ) -> SummaryResult:
     paper = get_paper(database_path, paper_id)
     if paper is None:
@@ -320,7 +322,7 @@ def summarize_paper(
             provider_health.require("llm")
         except ProviderUnavailableError as exc:
             raise SummaryError(str(exc)) from exc
-    llm = provider or OpenAICompatibleProvider(settings)
+    llm = TrackedLlmProvider(provider or OpenAICompatibleProvider(settings), llm_stats)
     run_id = start_processing_run(database_path, paper_id, "summarize")
     facts_dir = data_dir / "papers" / paper_id / "summary" / "facts"
     call_log_dir = (
@@ -348,6 +350,7 @@ def summarize_paper(
             call_log_dir / "summary.json" if call_log_dir is not None else None,
             "summary",
             summarization.summary_max_output_tokens,
+            LlmStage.SUMMARY,
         )
         summary = _validate_or_repair(
             raw_response.content,
@@ -398,7 +401,7 @@ def _section_facts(
     max_chunk_characters: int,
     max_output_tokens: int,
     call_log_dir: Path | None,
-    provider: LlmProvider,
+    provider: TrackedLlmProvider,
     database_path: Path,
     run_id: str,
     progress: ProgressCallback | None,
@@ -418,14 +421,16 @@ def _section_facts(
             except (OSError, KeyError, TypeError, ValueError, ValidationError):
                 pass
         report_progress(progress, f"Summarizing section facts {index}/{len(chunks)}...")
-        response = _generate(
+        response = _generate_facts(
             provider,
             _facts_prompt(prompt_template, chunk),
             database_path,
             run_id,
-            call_log_dir / f"facts-{index:03d}.json" if call_log_dir is not None else None,
-            f"facts {index}/{len(chunks)}",
+            call_log_dir,
+            index,
+            len(chunks),
             max_output_tokens,
+            progress,
         )
         try:
             validated = ExtractedFacts.model_validate_json(response.content).model_dump_json()
@@ -445,14 +450,63 @@ def _section_facts(
     return facts
 
 
+def _generate_facts(
+    provider: TrackedLlmProvider,
+    prompt: str,
+    database_path: Path,
+    run_id: str,
+    call_log_dir: Path | None,
+    index: int,
+    total: int,
+    max_output_tokens: int,
+    progress: ProgressCallback | None,
+    *,
+    max_attempts: int = 3,
+) -> LlmResponse:
+    attempt_tokens = max_output_tokens
+    response: LlmResponse | None = None
+    for attempt in range(1, max_attempts + 1):
+        suffix = "" if attempt == 1 else f"-retry-{attempt}"
+        response = _generate(
+            provider,
+            prompt,
+            database_path,
+            run_id,
+            call_log_dir / f"facts-{index:03d}{suffix}.json" if call_log_dir is not None else None,
+            f"facts {index}/{total}{suffix.replace('-', ' ')}",
+            attempt_tokens,
+            LlmStage.FACT,
+        )
+        truncated = response.finish_reason == "length"
+        valid = False
+        if truncated:
+            try:
+                ExtractedFacts.model_validate_json(response.content)
+            except ValidationError:
+                pass
+            else:
+                valid = True
+        if not truncated or valid or attempt == max_attempts:
+            return response
+        attempt_tokens = min(attempt_tokens * 2, max_output_tokens * 4)
+        report_progress(
+            progress,
+            f"Retrying section facts {index}/{total} with {attempt_tokens} output tokens "
+            "(previous response was truncated)...",
+        )
+    assert response is not None
+    return response
+
+
 def _generate(
-    provider: LlmProvider,
+    provider: TrackedLlmProvider,
     prompt: str,
     database_path: Path,
     run_id: str,
     diagnostic_path: Path | None,
     label: str,
     max_tokens: int,
+    purpose: LlmStage,
 ) -> LlmResponse:
     diagnostic = {
         "label": label,
@@ -476,7 +530,7 @@ def _generate(
     )
     logger.debug("llm request content: label=%s\n%s", label, prompt)
     try:
-        response = provider.generate(prompt, max_tokens=max_tokens)
+        response = provider.generate(purpose, prompt, max_tokens=max_tokens)
     except LlmProviderError as exc:
         record_llm_call(
             database_path,
@@ -535,7 +589,7 @@ def _generate(
 
 def _validate_or_repair(
     raw: str,
-    provider: LlmProvider,
+    provider: TrackedLlmProvider,
     database_path: Path,
     run_id: str,
     call_log_dir: Path | None,
@@ -559,6 +613,7 @@ def _validate_or_repair(
                 call_log_dir / f"repair-{attempt + 1}.json" if call_log_dir is not None else None,
                 f"repair {attempt + 1}/2",
                 max_output_tokens,
+                LlmStage.SUMMARY,
             ).content
     raise AssertionError("unreachable")
 
