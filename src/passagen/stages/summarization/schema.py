@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SUMMARY_SCHEMA_VERSION = "2"
+SUMMARY_SCHEMA_VERSION: Literal["2"] = "2"
 
 
 class ExtractedFacts(BaseModel):

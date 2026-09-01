@@ -78,11 +78,14 @@ def run_command(
         logger.error("run command failed during scan: %s", exc)
         console.print(f"[red]Run error:[/red] {exc}", highlight=False)
         raise typer.Exit(code=2) from exc
-    for failure in result.scan.failures:
-        console.print(f"[red]Scan failed:[/red] {failure.path}: {failure.message}", highlight=False)
-    for failure in result.update.failures:
+    for scan_failure in result.scan.failures:
         console.print(
-            f"[red]Update failed:[/red] {failure.paper_id}: {failure.message}",
+            f"[red]Scan failed:[/red] {scan_failure.path}: {scan_failure.message}",
+            highlight=False,
+        )
+    for update_failure in result.update.failures:
+        console.print(
+            f"[red]Update failed:[/red] {update_failure.paper_id}: {update_failure.message}",
             highlight=False,
         )
     console.print(

@@ -27,6 +27,11 @@ basedpyright:
   script:
     - uv run basedpyright
 
+mypy:
+  stage: lint
+  script:
+    - uv run mypy
+
 pytest:
   stage: test
   script:

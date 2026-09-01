@@ -162,6 +162,7 @@ def _import_pdf(
     data_dir: Path,
     database_path: Path,
 ) -> tuple[PaperRecord, bool]:
+    temp_path: Path | None
     temp_path, sha256, size_bytes = _copy_to_temp(source_path, data_dir)
     managed_path = Path("pdfs") / sha256[:2] / f"{sha256}.pdf"
     destination = data_dir / managed_path

@@ -555,6 +555,7 @@ Passagen 会尝试有限的 LLM 修复，并将原始响应和校验错误保存
 uv run pytest
 uv run ruff check .
 uv run basedpyright
+uv run mypy
 uv build
 ```
 

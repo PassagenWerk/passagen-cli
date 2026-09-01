@@ -1,13 +1,13 @@
 # Passagen Python 代码风格
 
-本文档定义 Passagen 的 Python 编码与测试约定。规则参考 Denkbild 的 Python 工程实践，但按 Passagen 当前规模收敛为一套类型检查器和一组统一命令。
+本文档定义 Passagen 的 Python 编码与测试约定。规则参考 Denkbild 的 Python 工程实践，并使用两套互补的类型检查器和一组统一命令。
 
 ## 基线
 
 - 使用 Python 3.12 及以上版本。
 - 使用 `uv` 管理依赖、虚拟环境和命令执行。
 - Ruff 同时负责格式化、导入排序和 lint，行宽为 100。
-- Basedpyright 使用 basic 模式检查 `src/` 和 `tests/`。
+- Basedpyright 使用 standard 模式检查 `src/` 和 `tests/`，mypy 对同一范围进行交叉检查。
 - pytest 负责测试，pytest-cov 默认收集分支覆盖率。
 - 不直接维护工具生成的格式；以 `pyproject.toml` 为唯一配置入口。
 
@@ -18,6 +18,7 @@ uv sync --frozen
 uv run ruff format .
 uv run ruff check .
 uv run basedpyright
+uv run mypy
 uv run pytest
 ```
 
@@ -104,6 +105,7 @@ uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run ruff check .
 uv run ruff format --check .
 uv run basedpyright
+uv run mypy
 uv run pytest
 ```
 
