@@ -10,7 +10,7 @@
 
 | 路径 | 当前职责 |
 |------|----------|
-| `src/passagen/cli/` | Typer composition root、配置错误呈现、命令和 execution logging |
+| `src/passagen/cli/` | Typer composition root（`app.py`）、共享 runtime、按命令树拆分的 `commands/` 和 execution logging |
 | `src/passagen/config/` | 配置模型、优先级合并和运行时校验 |
 | `src/passagen/domain/` | Paper、元数据值对象和标识规范化等稳定领域模型 |
 | `src/passagen/storage/` | SQLAlchemy ORM、Session 事务、repository 和 Alembic migration |
