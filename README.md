@@ -553,6 +553,8 @@ Passagen 会尝试有限的 LLM 修复，并将原始响应和校验错误保存
 
 ```bash
 uv run pytest
+uv run python scripts/pytest_parallel.py
+uv run python scripts/pytest_parallel.py -m slow -o addopts=""
 uv run ruff check .
 uv run basedpyright
 uv run mypy

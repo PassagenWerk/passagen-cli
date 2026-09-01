@@ -20,6 +20,14 @@ uv run ruff check .
 uv run basedpyright
 uv run mypy
 uv run pytest
+uv run python scripts/pytest_parallel.py
+```
+
+默认 pytest 配置排除标记为 `slow` 的完整 CLI 工作流。本地按需运行慢测试或全部测试：
+
+```shell
+uv run python scripts/pytest_parallel.py -m slow -o addopts=""
+uv run python scripts/pytest_parallel.py -o addopts=""
 ```
 
 提交钩子安装命令：
@@ -106,7 +114,11 @@ uv run ruff check .
 uv run ruff format --check .
 uv run basedpyright
 uv run mypy
-uv run pytest
+uv run python scripts/pytest_parallel.py
 ```
+
+直接运行 `uv run pytest` 便于串行调试快速测试。pre-push 运行快速测试，CI 将 fast 与 slow
+分成独立 job 并覆盖完整测试集。pytest-xdist 默认使用可用物理核心的一半且最多 8 个
+worker；可通过 `PASSAGEN_PYTEST_WORKERS` 显式覆盖。
 
 修复应优先消除根因，不通过扩大忽略规则、无理由增加 `# type: ignore` 或降低检查级别让门禁通过。

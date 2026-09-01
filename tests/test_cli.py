@@ -332,6 +332,7 @@ def test_metadata_command_resolves_local_pdf_metadata(tmp_path: Path) -> None:
     assert "already resolved" in result.stdout
 
 
+@pytest.mark.slow
 def test_parse_command_writes_extracted_artifact(tmp_path: Path) -> None:
     source_dir = tmp_path / "inbox"
     pdf_path = source_dir / "paper.pdf"
@@ -362,6 +363,7 @@ def test_parse_command_writes_extracted_artifact(tmp_path: Path) -> None:
     assert "already parsed" in result.stdout
 
 
+@pytest.mark.slow
 def test_update_one_then_all_papers(tmp_path: Path) -> None:
     source_dir = tmp_path / "inbox"
     write_metadata_pdf(source_dir / "first.pdf", "First Paper")
@@ -410,6 +412,7 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
     assert "updated: 2, skipped: 0, failed: 0" in result.stdout
 
 
+@pytest.mark.slow
 def test_run_is_idempotent_and_does_not_repeat_llm_calls(tmp_path: Path) -> None:
     _FakeLlmProvider.calls = 0
     source_dir = tmp_path / "inbox"
@@ -444,6 +447,7 @@ def test_run_is_idempotent_and_does_not_repeat_llm_calls(tmp_path: Path) -> None
     assert _FakeLlmProvider.calls == first_call_count
 
 
+@pytest.mark.slow
 def test_update_all_isolates_paper_failure(tmp_path: Path) -> None:
     source_dir = tmp_path / "inbox"
     write_metadata_pdf(source_dir / "missing.pdf", "Missing Paper")

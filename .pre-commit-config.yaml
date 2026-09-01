@@ -35,8 +35,8 @@ repos:
         stages: [pre-push]
 
       - id: pytest
-        name: pytest
-        entry: uv run pytest -q
+        name: pytest parallel
+        entry: uv run python scripts/pytest_parallel.py -q
         language: system
         pass_filenames: false
         types_or: [python, pyi]
