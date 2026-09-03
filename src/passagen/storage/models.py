@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Text, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -46,6 +46,8 @@ class PaperRow(Base):
     processing_runs: Mapped[list[ProcessingRunRow]] = relationship(
         back_populates="paper", passive_deletes=True
     )
+    tag_assignments: Mapped[list[PaperTagRow]] = relationship(passive_deletes=True)
+    collection_memberships: Mapped[list[CollectionPaperRow]] = relationship(passive_deletes=True)
 
 
 class ArtifactRow(Base):
@@ -111,3 +113,65 @@ class LlmCallRow(Base):
     )
 
     processing_run: Mapped[ProcessingRunRow] = relationship(back_populates="llm_calls")
+
+
+class TagRow(Base):
+    __tablename__ = "tags"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    color: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class PaperTagRow(Base):
+    __tablename__ = "paper_tags"
+    __table_args__ = (UniqueConstraint("paper_id", "tag_id"),)
+
+    paper_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("papers.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class CollectionRow(Base):
+    __tablename__ = "collections"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class CollectionPaperRow(Base):
+    __tablename__ = "collection_papers"
+    __table_args__ = (
+        UniqueConstraint("collection_id", "paper_id"),
+        UniqueConstraint("collection_id", "position"),
+        CheckConstraint("position >= 0"),
+    )
+
+    collection_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True
+    )
+    paper_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("papers.id", ondelete="CASCADE"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    added_at: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )

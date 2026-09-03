@@ -123,22 +123,17 @@ def update_paper_metadata(
     _require_database(database_path)
     try:
         with session_scope(database_path) as session:
+            existing = _paper_by_id(session, paper_id)
+            if existing is None:
+                raise KeyError(paper_id)
+            values = _metadata_values_preserving_user_sources(existing, metadata)
             result = session.execute(
                 update(PaperRow)
                 .where(PaperRow.id == paper_id)
                 .values(
-                    title=metadata.title,
-                    authors_json=json.dumps(metadata.authors, ensure_ascii=False),
-                    year=metadata.year,
-                    venue=metadata.venue,
-                    doi=metadata.doi,
-                    arxiv_id=metadata.arxiv_id,
-                    source_url=metadata.source_url,
-                    metadata_sources_json=json.dumps(
-                        metadata.sources, ensure_ascii=False, sort_keys=True
-                    ),
+                    **values,
                     status=status.value,
-                    updated_at=func.current_timestamp(),
+                    updated_at=func.strftime("%Y-%m-%d %H:%M:%f", "now"),
                 )
             )
             if not isinstance(result, CursorResult) or result.rowcount != 1:
@@ -472,3 +467,42 @@ def _json_dict(value: object) -> dict[object, object]:
         return {}
     parsed = json.loads(value)
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _metadata_values_preserving_user_sources(
+    row: PaperRow, metadata: BibliographicMetadata
+) -> dict[str, object]:
+    sources = {str(key): str(value) for key, value in _json_dict(row.metadata_sources_json).items()}
+    generated: dict[str, object] = {
+        "title": metadata.title,
+        "authors": metadata.authors,
+        "year": metadata.year,
+        "venue": metadata.venue,
+        "doi": metadata.doi,
+        "arxiv_id": metadata.arxiv_id,
+        "source_url": metadata.source_url,
+    }
+    existing: dict[str, object] = {
+        "title": row.title,
+        "authors": tuple(str(author) for author in _json_list(row.authors_json)),
+        "year": row.year,
+        "venue": row.venue,
+        "doi": row.doi,
+        "arxiv_id": row.arxiv_id,
+        "source_url": row.source_url,
+    }
+    merged_sources = dict(metadata.sources)
+    for field, source in sources.items():
+        if source == "user" and field in generated:
+            generated[field] = existing[field]
+            merged_sources[field] = "user"
+    return {
+        "title": generated["title"],
+        "authors_json": json.dumps(generated["authors"], ensure_ascii=False),
+        "year": generated["year"],
+        "venue": generated["venue"],
+        "doi": generated["doi"],
+        "arxiv_id": generated["arxiv_id"],
+        "source_url": generated["source_url"],
+        "metadata_sources_json": json.dumps(merged_sources, ensure_ascii=False, sort_keys=True),
+    }

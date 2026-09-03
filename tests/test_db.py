@@ -45,7 +45,16 @@ def test_initialize_database_creates_current_schema(tmp_path: Path) -> None:
         artifact_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(artifacts)").fetchall()
         }
-    assert {"papers", "artifacts", "processing_runs", "llm_calls"} <= tables
+    assert {
+        "papers",
+        "artifacts",
+        "processing_runs",
+        "llm_calls",
+        "tags",
+        "paper_tags",
+        "collections",
+        "collection_papers",
+    } <= tables
     assert "metadata_sources_json" in paper_columns
     assert "size_bytes" in artifact_columns
     assert alembic_revision(database_path) == head_revision()

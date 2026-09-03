@@ -8,7 +8,7 @@ from sqlalchemy import Connection, inspect
 
 from passagen.storage.engine import database_engine
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _BASELINE_REVISION = "0001"
 _APPLICATION_TABLES = {"papers", "artifacts", "processing_runs", "llm_calls"}
 _REQUIRED_COLUMNS = {
@@ -42,10 +42,15 @@ def initialize_schema(database_path: Path) -> None:
         elif (
             application_tables == _APPLICATION_TABLES
             and not has_alembic
-            and user_version == SCHEMA_VERSION
+            and user_version
+            in {
+                1,
+                SCHEMA_VERSION,
+            }
         ):
             _validate_legacy_schema(connection)
-            command.stamp(config, _BASELINE_REVISION)
+            command.stamp(config, _BASELINE_REVISION if user_version == 1 else head_revision())
+            command.upgrade(config, "head")
         elif has_alembic:
             command.upgrade(config, "head")
         else:
