@@ -64,6 +64,7 @@ class PaperSort(StrEnum):
     YEAR = "year"
     IMPORTED_AT = "imported_at"
     UPDATED_AT = "updated_at"
+    COLLECTION_ORDER = "collection_order"
 
 
 class SortDirection(StrEnum):
@@ -79,6 +80,7 @@ class PaperFilters:
     venue: str | None = None
     year: int | None = None
     collection_id: str | None = None
+    unfiled: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,16 +161,21 @@ class CatalogService:
     ) -> PaperPage:
         if filters is None:
             filters = PaperFilters()
+        if filters.collection_id is not None and filters.unfiled:
+            raise CatalogValidationError("collection and unfiled filters are mutually exclusive")
         if not 1 <= limit <= 200 or offset < 0:
             raise CatalogValidationError("limit must be 1..200 and offset must be non-negative")
         statement = _filtered_papers(filters)
         count_statement = select(func.count()).select_from(statement.subquery())
+        if sort is PaperSort.COLLECTION_ORDER and filters.collection_id is None:
+            raise CatalogValidationError("collection_order requires a collection filter")
         sort_column = {
             PaperSort.TITLE: PaperRow.title,
             PaperSort.VENUE: PaperRow.venue,
             PaperSort.YEAR: PaperRow.year,
             PaperSort.IMPORTED_AT: PaperRow.created_at,
             PaperSort.UPDATED_AT: PaperRow.updated_at,
+            PaperSort.COLLECTION_ORDER: CollectionPaperRow.position,
         }[sort]
         ordering = sort_column.asc() if direction is SortDirection.ASC else sort_column.desc()
         statement = statement.order_by(ordering, PaperRow.id.asc()).limit(limit).offset(offset)
@@ -507,6 +514,12 @@ def _filtered_papers(filters: PaperFilters) -> Select[tuple[PaperRow]]:
     if filters.collection_id:
         statement = statement.join(CollectionPaperRow).where(
             CollectionPaperRow.collection_id == filters.collection_id
+        )
+    elif filters.unfiled:
+        statement = statement.where(
+            ~select(CollectionPaperRow.paper_id)
+            .where(CollectionPaperRow.paper_id == PaperRow.id)
+            .exists()
         )
     return statement
 

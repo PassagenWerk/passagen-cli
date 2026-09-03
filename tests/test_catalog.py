@@ -111,6 +111,30 @@ def test_collection_membership_is_idempotent_and_reorders_atomically(tmp_path: P
     ]
 
 
+def test_papers_can_be_filtered_to_unfiled_members(tmp_path: Path) -> None:
+    catalog, _ = _library(tmp_path)
+    collection = catalog.create_collection("Reading list")
+    catalog.add_collection_papers(collection.id, ["paper-0", "paper-1"])
+
+    page = catalog.list_papers(PaperFilters(unfiled=True))
+
+    assert {paper.id for paper in page.items} == {"paper-2"}
+
+
+def test_collection_members_can_be_listed_in_collection_order(tmp_path: Path) -> None:
+    catalog, _ = _library(tmp_path)
+    collection = catalog.create_collection("Reading list")
+    catalog.add_collection_papers(collection.id, ["paper-2", "paper-0"])
+
+    page = catalog.list_papers(
+        PaperFilters(collection_id=collection.id),
+        sort=PaperSort.COLLECTION_ORDER,
+        direction=SortDirection.ASC,
+    )
+
+    assert [paper.id for paper in page.items] == ["paper-2", "paper-0"]
+
+
 def test_removing_membership_compacts_positions_without_deleting_paper(tmp_path: Path) -> None:
     catalog, _ = _library(tmp_path)
     collection = catalog.create_collection("Queue")
