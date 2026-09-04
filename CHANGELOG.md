@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- `passagen update` now runs through the shared Core `ProcessingService`: every update is a
+  persisted run (`update_runs` table, `data/runs/<run-id>/` snapshot and progress events) with
+  per-paper conflict detection, while console output and exit codes stay unchanged.
 - `passagen config check` also validates the new `full` and `reduce` summary prompt templates and
   displays the summarization strategy, chunk budget, and global LLM budget settings.
 - `passagen.yaml` / `passagen.example.yaml`: removed `summarization.max_chunk_characters`; added

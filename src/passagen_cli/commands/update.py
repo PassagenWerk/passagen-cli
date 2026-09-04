@@ -4,8 +4,8 @@ import logging
 from typing import Annotated
 
 import typer
-from passagen.stages.updating import UpdateTargetError, update_papers
-from passagen.storage.repository import DatabaseNotInitializedError
+from passagen.processing import ProcessingError, ProcessingService
+from passagen.storage.repository import DatabaseNotInitializedError, list_papers
 
 from passagen_cli.runtime import ConsoleProgress, console, get_state
 
@@ -25,21 +25,26 @@ def update_command(
 ) -> None:
     state = get_state(ctx)
     settings = state.settings
+    service = ProcessingService(settings, provider_health=state.provider_health)
     try:
         with ConsoleProgress(console, "Preparing update...") as progress:
-            result = update_papers(
-                settings.resolved_database_path,
-                settings.resolved_data_dir,
-                settings.providers,
-                settings.pipeline,
-                paper_id,
-                provider_health=state.provider_health,
-                execution_log_dir=state.execution_log_dir,
-                force=force,
+            paper_ids = (
+                [paper_id]
+                if paper_id is not None
+                else [paper.id for paper in list_papers(settings.resolved_database_path)]
+            )
+            run = service.start_update(
+                paper_ids,
+                mode="rebuild" if force else "continue",
+                from_stage="metadata" if force else None,
+            )
+            result = service.execute_run(
+                run.id,
                 progress=progress.update,
+                execution_log_dir=state.execution_log_dir,
                 llm_stats=state.llm_stats,
             )
-    except (DatabaseNotInitializedError, UpdateTargetError) as exc:
+    except (DatabaseNotInitializedError, ProcessingError) as exc:
         logger.error("update command failed: target=%s error=%s", paper_id or "all", exc)
         console.print(f"[red]Update error:[/red] {exc}", highlight=False)
         raise typer.Exit(code=1) from exc
