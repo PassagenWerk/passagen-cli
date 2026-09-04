@@ -90,6 +90,21 @@ def test_tags_are_normalized_and_assignments_are_replaced(tmp_path: Path) -> Non
         catalog.set_paper_tags("paper-0", [methods.id, methods.id])
 
 
+def test_single_tag_assignment_is_idempotent_and_removable(tmp_path: Path) -> None:
+    catalog, _ = _library(tmp_path)
+    tag = catalog.create_tag("Reading")
+
+    catalog.add_paper_tag("paper-0", tag.id)
+    catalog.add_paper_tag("paper-0", tag.id)
+
+    assert catalog.get_tag(tag.id) == tag
+    assert catalog.get_paper("paper-0").tag_ids == (tag.id,)
+    catalog.remove_paper_tag("paper-0", tag.id)
+    assert catalog.get_paper("paper-0").tag_ids == ()
+    with pytest.raises(CatalogNotFoundError, match="does not have"):
+        catalog.remove_paper_tag("paper-0", tag.id)
+
+
 def test_collection_membership_is_idempotent_and_reorders_atomically(tmp_path: Path) -> None:
     catalog, _ = _library(tmp_path)
     collection = catalog.create_collection("Reading list")

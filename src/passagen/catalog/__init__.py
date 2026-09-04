@@ -251,6 +251,10 @@ class CatalogService:
             rows = session.scalars(select(TagRow).order_by(TagRow.normalized_name, TagRow.id)).all()
             return tuple(_tag(row) for row in rows)
 
+    def get_tag(self, tag_id: str) -> Tag:
+        with session_scope(self.database_path) as session:
+            return _tag(_required(session, TagRow, tag_id, "Tag"))
+
     def create_tag(self, name: str, color: str | None = None) -> Tag:
         clean_name, normalized = _tag_names(name)
         try:
@@ -296,6 +300,22 @@ class CatalogService:
             session.flush()
             session.add_all(PaperTagRow(paper_id=paper_id, tag_id=tag_id) for tag_id in tag_ids)
             return tuple(_tag(row) for row in sorted(tags, key=lambda item: item.normalized_name))
+
+    def add_paper_tag(self, paper_id: str, tag_id: str) -> None:
+        with session_scope(self.database_path) as session:
+            _required(session, PaperRow, paper_id, "Paper")
+            _required(session, TagRow, tag_id, "Tag")
+            if session.get(PaperTagRow, (paper_id, tag_id)) is None:
+                session.add(PaperTagRow(paper_id=paper_id, tag_id=tag_id))
+
+    def remove_paper_tag(self, paper_id: str, tag_id: str) -> None:
+        with session_scope(self.database_path) as session:
+            _required(session, PaperRow, paper_id, "Paper")
+            _required(session, TagRow, tag_id, "Tag")
+            assignment = session.get(PaperTagRow, (paper_id, tag_id))
+            if assignment is None:
+                raise CatalogNotFoundError("Paper does not have the tag")
+            session.delete(assignment)
 
     def list_collections(self) -> tuple[Collection, ...]:
         with session_scope(self.database_path) as session:

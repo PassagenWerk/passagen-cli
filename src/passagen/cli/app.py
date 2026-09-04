@@ -16,6 +16,7 @@ from passagen.cli.commands import (
     health,
     ingestion,
     logs,
+    organization,
     query,
     stages,
     update,
@@ -70,6 +71,8 @@ app.add_typer(config.config_app, name="config")
 app.add_typer(db.db_app, name="db")
 app.add_typer(logs.logs_app, name="logs")
 app.add_typer(artifacts.artifacts_app, name="artifacts")
+app.add_typer(organization.collection_app, name="collection")
+app.add_typer(organization.tag_app, name="tag")
 
 logger = logging.getLogger(__name__)
 

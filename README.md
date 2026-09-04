@@ -366,6 +366,8 @@ pipeline:
 | `passagen update [paper-id]` | 从最后成功状态继续单篇或全部论文。 |
 | `passagen list [--status STATUS]` | 列出论文并按状态过滤。 |
 | `passagen show <paper-id>` | 显示元数据和 artifact 路径。 |
+| `passagen collection <create\|list\|delete\|add\|remove\|rename>` | 按 ID 管理有序论文集合。 |
+| `passagen tag <create\|list\|delete\|add\|remove\|rename>` | 按 ID 管理论文标签及其关联。 |
 | `passagen check` | 检测外部服务（GROBID、LLM、Crossref、arXiv）可达性；任一不可用则以退出码 1 结束。 |
 | `passagen artifacts check` | 检查 artifact 路径、大小和 SHA-256。 |
 | `passagen logs clean` | 将历史执行日志归档到 `logs/old/`。 |
