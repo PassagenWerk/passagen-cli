@@ -42,7 +42,8 @@ git clone <passagen-core-repository-url> passagen-core
 git clone <passagen-cli-repository-url> passagen-cli
 cd passagen-cli
 uv sync --frozen
-cp passagen.example.yaml passagen.yaml
+mkdir -p data
+cp passagen.example.yaml data/passagen.yaml
 uv run passagen config check
 ```
 
@@ -68,7 +69,7 @@ uv build
 export PASSAGEN_API_KEY=your-key
 ```
 
-如果没有运行 GROBID，在 `passagen.yaml` 中选择 PyMuPDF：
+如果没有运行 GROBID，在 `data/passagen.yaml` 中选择 PyMuPDF：
 
 ```yaml
 pipeline:
@@ -94,11 +95,11 @@ uv run passagen show <paper-id>
 
 ## 完整配置
 
-默认读取当前工作目录下的 `passagen.yaml`。仓库中的 `passagen.example.yaml` 提供完整模板：
+默认读取数据目录下的 `passagen.yaml`（`<data-dir>/passagen.yaml`，默认
+`./data/passagen.yaml`）。仓库中的 `passagen.example.yaml` 提供完整模板：
 
 ```yaml
 passagen:
-  data_dir: data
   database_path: null
   debug: false
 
@@ -158,11 +159,10 @@ pipeline:
 
 | 配置 | 说明 |
 |------|------|
-| `passagen.data_dir` | 数据库、受管理 PDF 和生成产物的根目录。 |
 | `passagen.database_path` | SQLite 路径；为 `null` 时使用 `<data_dir>/passagen.db`。 |
 | `passagen.debug` | 启用 DEBUG 文件日志；不会把 API key 写入日志。 |
 | `--config` | 为单次命令指定其他 YAML 配置文件。 |
-| `--data-dir` | 为单次命令覆盖数据目录。 |
+| `--data-dir` | 指定数据目录；这是设置 `data_dir` 的唯一方式，配置文件中的 `data_dir` 会被拒绝。 |
 
 配置也支持嵌套环境变量。例如：
 

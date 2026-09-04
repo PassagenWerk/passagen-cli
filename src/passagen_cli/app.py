@@ -88,7 +88,10 @@ def version_callback(value: bool) -> None:
 @app.callback()
 def main(
     ctx: typer.Context,
-    config: Annotated[Path | None, typer.Option(help="Path to a YAML config file.")] = None,
+    config: Annotated[
+        Path | None,
+        typer.Option(help="Path to a YAML config file (default: <data-dir>/passagen.yaml)."),
+    ] = None,
     data_dir: Annotated[Path | None, typer.Option(help="Override the data directory.")] = None,
     debug: Annotated[bool | None, typer.Option(help="Enable debug output.")] = None,
     version: Annotated[

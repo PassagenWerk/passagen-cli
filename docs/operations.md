@@ -18,7 +18,8 @@ Passagen/
 ```bash
 cd passagen-cli
 uv sync --frozen
-cp passagen.example.yaml passagen.yaml
+mkdir -p data
+cp passagen.example.yaml data/passagen.yaml
 uv run passagen config check
 uv run passagen db init
 ```
@@ -28,7 +29,9 @@ uv run passagen db init
 
 ## Configuration
 
-CLI 默认读取当前工作目录的 `passagen.yaml`。入口支持：
+CLI 默认读取数据目录下的 `passagen.yaml`（即 `<data-dir>/passagen.yaml`，默认
+`./data/passagen.yaml`）。`data_dir` 只能由 `--data-dir` 命令行参数指定，不能出现在
+配置文件或环境变量中。入口支持：
 
 ```bash
 passagen --config <path> <command>
