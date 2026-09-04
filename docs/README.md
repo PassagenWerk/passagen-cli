@@ -8,6 +8,10 @@
 |------|------|
 | 理解产品目标、处理流程和数据格式 | [`design.md`](design.md) |
 | 查看版本范围、里程碑和验收条件 | [`roadmap.md`](roadmap.md) |
+| 第一阶段：拆分 Core、CLI 和 Web，并统一日志诊断责任 | [`roadmap-core-split.md`](roadmap-core-split.md) |
+| 第二阶段：Collection 综述、研究和对话探索 | [`roadmap-collection-research-and-exploration.md`](roadmap-collection-research-and-exploration.md) |
+| Collection 和 Tag CLI 管理 | [`roadmap-collection-and-tags.md`](roadmap-collection-and-tags.md) |
+| 改进 Summary 上下文预算、全文生成和语义切块 | [`roadmap-context-improving.md`](roadmap-context-improving.md) |
 | 判断新代码应该放在哪里 | [`architecture.md`](architecture.md) |
 | 编写、测试和检查 Python 代码 | [`code-style.md`](code-style.md) |
 | 安装、配置、GROBID 与故障排查 | [`operations.md`](operations.md) |
