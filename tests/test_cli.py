@@ -491,13 +491,13 @@ def test_run_is_idempotent_and_does_not_repeat_llm_calls(tmp_path: Path) -> None
     assert first.exit_code == 0
     assert "Imported: 1" in first.stdout
     assert "LLM usage" in first.stdout
-    assert re.search(r"total\D+3\D+45\D+30\D+15", first.stdout)
-    assert re.search(r"fact\D+1\D+15\D+10\D+5", first.stdout)
+    assert re.search(r"total\D+2\D+30\D+20\D+10", first.stdout)
+    assert re.search(r"evidence\D+0\D+0\D+0\D+0", first.stdout)
     assert re.search(r"summary\D+1\D+15\D+10\D+5", first.stdout)
     assert re.search(r"outline\D+1\D+15\D+10\D+5", first.stdout)
     assert list_papers(data_dir / "passagen.db")[0].status.value == "outlined"
     first_call_count = _FakeLlmProvider.calls
-    assert first_call_count == 3
+    assert first_call_count == 2
 
     second = runner.invoke(app, common)
 
