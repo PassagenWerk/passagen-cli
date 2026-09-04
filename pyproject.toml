@@ -1,24 +1,22 @@
 [project]
-name = "passagen"
-version = "0.1.1"
+name = "passagen-cli"
+version = "0.2.0"
 description = "Manage paper PDFs and generate structured summaries"
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
-    "alembic>=1.14,<2",
-    "httpx>=0.28,<1",
-    "pydantic-settings>=2.8,<3",
-    "pymupdf>=1.25,<2",
-    "pyyaml>=6,<7",
+    "passagen-core>=0.2,<0.3",
     "rich>=13.9,<15",
-    "sqlalchemy>=2.0,<3",
     "typer>=0.15,<1",
 ]
 
+[tool.uv.sources]
+passagen-core = { path = "../passagen-core", editable = true }
+
 [project.scripts]
-passagen = "passagen.cli:app"
+passagen = "passagen_cli:app"
 
 [dependency-groups]
 dev = [
@@ -44,14 +42,14 @@ addopts = [
     "--import-mode=importlib",
     "-m",
     "not slow",
-    "--cov=passagen",
+    "--cov=passagen_cli",
     "--cov-report=term-missing",
     "--cov-report=html",
 ]
 
 [tool.coverage.run]
 branch = true
-source = ["passagen"]
+source = ["passagen_cli"]
 
 [tool.coverage.report]
 show_missing = true
@@ -88,4 +86,4 @@ warn_unused_ignores = true
 no_implicit_optional = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/passagen"]
+packages = ["src/passagen_cli"]

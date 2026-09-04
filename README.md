@@ -38,8 +38,9 @@ PDF
 ## 安装
 
 ```bash
-git clone <repository-url> Passagen
-cd Passagen
+git clone <passagen-core-repository-url> passagen-core
+git clone <passagen-cli-repository-url> passagen-cli
+cd passagen-cli
 uv sync --frozen
 cp passagen.example.yaml passagen.yaml
 uv run passagen config check
@@ -319,7 +320,7 @@ facts 截断重试和 summary 修复均按实际请求次数统计；该统计�
 内置 Prompt 位于：
 
 ```text
-src/passagen/resources/prompts/
+../passagen-core/src/passagen/resources/prompts/
   facts-v2.txt
   summary-v2.txt
   repair-v2.txt
@@ -366,6 +367,8 @@ pipeline:
 | `passagen update [paper-id]` | 从最后成功状态继续单篇或全部论文。 |
 | `passagen list [--status STATUS]` | 列出论文并按状态过滤。 |
 | `passagen show <paper-id>` | 显示元数据和 artifact 路径。 |
+| `passagen collection <create\|list\|delete\|add\|remove\|rename>` | 按 ID 管理有序论文集合。 |
+| `passagen tag <create\|list\|delete\|add\|remove\|rename>` | 按 ID 管理论文标签及其关联。 |
 | `passagen check` | 检测外部服务（GROBID、LLM、Crossref、arXiv）可达性；任一不可用则以退出码 1 结束。 |
 | `passagen artifacts check` | 检查 artifact 路径、大小和 SHA-256。 |
 | `passagen logs clean` | 将历史执行日志归档到 `logs/old/`。 |
@@ -563,9 +566,9 @@ uv build
 
 更多设计与运维细节见：
 
-- [`docs/design.md`](docs/design.md)
+- [`passagen-core/docs/design.md`](../passagen-core/docs/design.md)
 - [`docs/architecture.md`](docs/architecture.md)
-- [`docs/roadmap.md`](docs/roadmap.md)
+- [`passagen-core/docs/roadmap.md`](../passagen-core/docs/roadmap.md)
 - [`docs/operations.md`](docs/operations.md)
 
 ## 许可证

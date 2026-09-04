@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pymupdf
 import pytest
+from passagen.catalog import CatalogService
+from passagen.providers import LlmResponse, ProviderHealthSnapshot, ProviderStatus
+from passagen.storage.database import SCHEMA_VERSION, connect_database
+from passagen.storage.repository import list_papers
 from typer.testing import CliRunner
 
-from passagen.cli import app
-from passagen.providers import LlmResponse, ProviderHealthSnapshot, ProviderStatus
-from passagen.storage.database import SCHEMA_VERSION
-from passagen.storage.repository import list_papers
+from passagen_cli import app
 
 runner = CliRunner()
 
@@ -30,7 +31,7 @@ def isolate_cli_working_directory(
         lambda _settings: _FakeLlmProvider(),
     )
     monkeypatch.setattr(
-        importlib.import_module("passagen.cli.app"),
+        importlib.import_module("passagen_cli.app"),
         "check_provider_health",
         lambda _settings: ProviderHealthSnapshot(
             {
@@ -108,7 +109,7 @@ def test_version_uses_package_metadata() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.stdout.strip() == version("passagen")
+    assert result.stdout.strip() == version("passagen-cli")
 
 
 def _health_snapshot(*available: str, unavailable: str) -> ProviderHealthSnapshot:
@@ -129,7 +130,7 @@ def test_check_reports_reachable_providers(
     config_path = tmp_path / "passagen.yaml"
     write_offline_config(config_path)
     monkeypatch.setattr(
-        "passagen.cli.commands.health.check_provider_health",
+        "passagen_cli.commands.health.check_provider_health",
         lambda _settings: _health_snapshot("arxiv", "crossref", "grobid", "llm", unavailable=""),
     )
 
@@ -148,7 +149,7 @@ def test_check_fails_when_a_provider_is_unreachable(
     config_path = tmp_path / "passagen.yaml"
     write_offline_config(config_path)
     monkeypatch.setattr(
-        "passagen.cli.commands.health.check_provider_health",
+        "passagen_cli.commands.health.check_provider_health",
         lambda _settings: _health_snapshot("arxiv", "crossref", "llm", unavailable="grobid"),
     )
 
@@ -271,6 +272,65 @@ def test_scan_list_and_show(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert papers[0].pdf_sha256 in result.stdout
     assert str(data_dir / papers[0].managed_pdf_path) in result.stdout
+
+
+def test_collection_and_tag_commands_manage_paper_organization(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    assert runner.invoke(app, ["--data-dir", str(data_dir), "db", "init"]).exit_code == 0
+    with connect_database(data_dir / "passagen.db") as connection:
+        connection.execute(
+            """
+            INSERT INTO papers (id, original_filename, pdf_sha256, status)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("paper-1", "paper.pdf", "1" * 64, "discovered"),
+        )
+    common = ["--data-dir", str(data_dir)]
+
+    assert runner.invoke(app, [*common, "collection", "create", "Reading"]).exit_code == 0
+    assert runner.invoke(app, [*common, "tag", "create", "Important"]).exit_code == 0
+    catalog = CatalogService(data_dir / "passagen.db", data_dir)
+    collection = catalog.list_collections()[0]
+    tag = catalog.list_tags()[0]
+    catalog.update_collection(collection.id, description="Keep this")
+    catalog.update_tag(tag.id, color="#123456")
+
+    collection_list = runner.invoke(app, [*common, "collection", "list"])
+    tag_list = runner.invoke(app, [*common, "tag", "list"])
+    assert collection.id in collection_list.stdout
+    assert tag.id in tag_list.stdout
+
+    assert (
+        runner.invoke(app, [*common, "collection", "add", collection.id, "paper-1"]).exit_code == 0
+    )
+    assert (
+        runner.invoke(app, [*common, "collection", "add", collection.id, "paper-1"]).exit_code == 0
+    )
+    assert runner.invoke(app, [*common, "tag", "add", tag.id, "paper-1"]).exit_code == 0
+    assert runner.invoke(app, [*common, "tag", "add", tag.id, "paper-1"]).exit_code == 0
+
+    assert (
+        runner.invoke(
+            app, [*common, "collection", "rename", collection.id, "Core reading"]
+        ).exit_code
+        == 0
+    )
+    assert runner.invoke(app, [*common, "tag", "rename", tag.id, "Must read"]).exit_code == 0
+    assert catalog.get_collection(collection.id).description == "Keep this"
+    assert catalog.get_tag(tag.id).color == "#123456"
+
+    assert (
+        runner.invoke(app, [*common, "collection", "remove", collection.id, "paper-1"]).exit_code
+        == 0
+    )
+    assert runner.invoke(app, [*common, "tag", "remove", tag.id, "paper-1"]).exit_code == 0
+    missing = runner.invoke(app, [*common, "tag", "remove", tag.id, "paper-1"])
+    assert missing.exit_code == 1
+    assert "does not have the tag" in missing.stdout
+
+    assert runner.invoke(app, [*common, "collection", "delete", collection.id]).exit_code == 0
+    assert runner.invoke(app, [*common, "tag", "delete", tag.id]).exit_code == 0
+    assert catalog.get_paper("paper-1").id == "paper-1"
 
 
 def test_scan_reports_invalid_pdf_without_stopping(tmp_path: Path) -> None:

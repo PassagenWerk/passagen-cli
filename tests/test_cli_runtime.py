@@ -2,7 +2,7 @@ import io
 
 from rich.console import Console
 
-from passagen.cli.runtime import ConsoleProgress
+from passagen_cli.runtime import ConsoleProgress
 
 
 def test_progress_persists_each_distinct_message_once() -> None:

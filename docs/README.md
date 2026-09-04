@@ -1,32 +1,22 @@
-# Passagen 文档索引
+# Passagen CLI Documentation
 
-本文档是 Passagen 的开发文档入口。产品行为和数据约定记录在设计方案中，实施顺序记录在 Roadmap 中，代码组织和开发约定分别由架构与代码风格文档负责。
+本目录只记录 `passagen-cli` 终端适配器的行为。共享业务、数据库、pipeline、provider 和
+artifact 设计由 [`passagen-core`](../../passagen-core/docs/README.md) 维护。
 
-## 阅读入口
+## Documents
 
-| 目标 | 文档 |
-|------|------|
-| 理解产品目标、处理流程和数据格式 | [`design.md`](design.md) |
-| 查看版本范围、里程碑和验收条件 | [`roadmap.md`](roadmap.md) |
-| 判断新代码应该放在哪里 | [`architecture.md`](architecture.md) |
-| 编写、测试和检查 Python 代码 | [`code-style.md`](code-style.md) |
-| 安装、配置、GROBID 与故障排查 | [`operations.md`](operations.md) |
+| Goal | Document |
+|---|---|
+| 理解 CLI 包边界和命令调用流程 | [`architecture.md`](architecture.md) |
+| 安装、配置和运行 CLI | [`operations.md`](operations.md) |
+| 编写和检查 CLI Python 代码 | [`code-style.md`](code-style.md) |
+| Collection 和 Tag CLI contract | [`roadmap-collection-and-tags.md`](roadmap-collection-and-tags.md) |
+| 理解共享产品和 pipeline 设计 | [`passagen-core/docs/design.md`](../../passagen-core/docs/design.md) |
+| 查看共享功能 roadmap | [`passagen-core/docs/roadmap.md`](../../passagen-core/docs/roadmap.md) |
 
-## 文档类型
+## Ownership Rule
 
-| 类型 | 职责 |
-|------|------|
-| `README.md` | 文档入口，不重复展开具体设计 |
-| `design.md` | 面向产品和系统行为的稳定设计决策 |
-| `architecture.md` | 包职责、依赖方向、跨模块 contract 和扩展规则 |
-| `code-style.md` | 可执行的编码、类型、错误处理和测试约定 |
-| `roadmap.md` | 尚未实现或正在推进的工作及验收条件 |
-| `operations.md` | 安装、运行、备份、迁移和常见错误 |
-
-## 维护规则
-
-- 文档必须区分当前实现与未来计划，不能把 Roadmap 当作已交付行为。
-- 外部配置、数据库 Schema、处理状态或 artifact 格式变化时，同步更新 `design.md` 和对应测试。
-- 包职责、依赖方向或 pipeline stage contract 变化时，同步更新 `architecture.md`。
-- 开发命令、静态检查或测试分层变化时，同步更新 `code-style.md`。
-- 新增重要开发文档后，在本索引中登记。
+- Typer 参数、Rich 输出、CLI execution log 和退出码写在本目录。
+- 领域规则、Schema、migration、provider、LLM diagnostics 和恢复语义写在 Core 文档。
+- HTTP、后台 Web runner 和浏览器行为写在 `passagen-web/docs`。
+- 不在多个项目复制同一稳定规则；适配器文档通过相对链接引用 Core。
