@@ -27,6 +27,12 @@ providers:
     timeout_seconds: 120
     # Enable for reasoning models behind a proxy when thinking should not consume output tokens
     disable_thinking: false
+    # Global context budget shared by every LLM call; the API does not report these reliably
+    context_window_tokens: 128000
+    max_context_utilization: 0.65
+    safety_margin_tokens: 8000
+    # Token estimation is len(text) / chars_per_token; ~4.0 for English prose
+    chars_per_token: 4.0
 
 # 各处理阶段的参数配置，按阶段分包
 pipeline:
@@ -37,12 +43,17 @@ pipeline:
     parser: auto
     min_text_characters: 10
   summarization:
-    max_chunk_characters: 96000
+    # auto picks full-paper or hierarchical summarization from the context budget
+    strategy: auto
+    chunk_max_input_tokens: 24000
+    chunk_overlap_paragraphs: 1
     fact_max_output_tokens: 6000
     summary_max_output_tokens: 6000
     # null selects packaged prompts; custom templates must retain the documented placeholders
     facts_prompt_path: null
     summary_prompt_path: null
+    full_prompt_path: null
+    reduce_prompt_path: null
     repair_prompt_path: null
   outlining:
     max_output_tokens: 4000

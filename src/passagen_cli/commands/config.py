@@ -28,6 +28,8 @@ def config_check(ctx: typer.Context) -> None:
             settings.pipeline.summarization.facts_prompt_path,
             settings.pipeline.summarization.summary_prompt_path,
             settings.pipeline.summarization.repair_prompt_path,
+            settings.pipeline.summarization.full_prompt_path,
+            settings.pipeline.summarization.reduce_prompt_path,
         )
         load_outline_prompt_template(settings.pipeline.outlining.prompt_path)
     except PromptTemplateError as exc:
@@ -46,8 +48,28 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row(
         "providers.llm.disable_thinking", str(settings.providers.llm.disable_thinking).lower()
     )
+    table.add_row(
+        "providers.llm.context_window_tokens", str(settings.providers.llm.context_window_tokens)
+    )
+    table.add_row(
+        "providers.llm.max_context_utilization",
+        str(settings.providers.llm.max_context_utilization),
+    )
+    table.add_row(
+        "providers.llm.safety_margin_tokens", str(settings.providers.llm.safety_margin_tokens)
+    )
+    table.add_row("providers.llm.chars_per_token", str(settings.providers.llm.chars_per_token))
     table.add_row("pipeline.metadata.first_pages", str(settings.pipeline.metadata.first_pages))
     table.add_row("pipeline.parsing.parser", settings.pipeline.parsing.parser.value)
+    table.add_row("pipeline.summarization.strategy", settings.pipeline.summarization.strategy.value)
+    table.add_row(
+        "pipeline.summarization.chunk_max_input_tokens",
+        str(settings.pipeline.summarization.chunk_max_input_tokens),
+    )
+    table.add_row(
+        "pipeline.summarization.chunk_overlap_paragraphs",
+        str(settings.pipeline.summarization.chunk_overlap_paragraphs),
+    )
     table.add_row(
         "pipeline.outlining.max_output_tokens",
         str(settings.pipeline.outlining.max_output_tokens),
@@ -59,6 +81,14 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row(
         "pipeline.summarization.summary_prompt_path",
         str(settings.pipeline.summarization.summary_prompt_path or "built-in"),
+    )
+    table.add_row(
+        "pipeline.summarization.full_prompt_path",
+        str(settings.pipeline.summarization.full_prompt_path or "built-in"),
+    )
+    table.add_row(
+        "pipeline.summarization.reduce_prompt_path",
+        str(settings.pipeline.summarization.reduce_prompt_path or "built-in"),
     )
     table.add_row(
         "pipeline.summarization.repair_prompt_path",

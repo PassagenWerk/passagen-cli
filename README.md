@@ -124,6 +124,10 @@ providers:
     api_key_env: PASSAGEN_API_KEY
     timeout_seconds: 120
     disable_thinking: false
+    context_window_tokens: 128000
+    max_context_utilization: 0.65
+    safety_margin_tokens: 8000
+    chars_per_token: 4.0
 
 pipeline:
   metadata:
@@ -134,11 +138,15 @@ pipeline:
     min_text_characters: 10
 
   summarization:
-    max_chunk_characters: 96000
+    strategy: auto
+    chunk_max_input_tokens: 24000
+    chunk_overlap_paragraphs: 1
     fact_max_output_tokens: 3000
     summary_max_output_tokens: 6000
     facts_prompt_path: null
     summary_prompt_path: null
+    full_prompt_path: null
+    reduce_prompt_path: null
     repair_prompt_path: null
 
   outlining:
@@ -250,6 +258,10 @@ providers:
     api_key_env: PASSAGEN_API_KEY
     timeout_seconds: 120
     disable_thinking: false
+    context_window_tokens: 128000
+    max_context_utilization: 0.65
+    safety_margin_tokens: 8000
+    chars_per_token: 4.0
 ```
 
 之后会考虑使用 LiteLLM 做不同层级 LLM 的转发。
@@ -292,15 +304,15 @@ extra_body = {"thinking": {"type": "disabled"}}
 
 LLM 同时用于：
 
-- 分块事实提取。
+- 全文或分块的结构化 evidence 提取（由 `summarization.strategy` 和上下文预算决定）。
 - Structured Summary v2 生成和有限修复。
 - 分层英文 Outline v2 生成。
 
 请求使用 `temperature: 0` 和 JSON object response format。所有响应仍会经过本地 Pydantic 校验。
 
 执行 `run`、`update`、`summarize` 或 `outline` 后，CLI 会输出本次运行的 LLM 调用统计，
-包括总调用次数、input/output/total token，以及 `fact`、`summary`、`outline` 各阶段明细。
-facts 截断重试和 summary 修复均按实际请求次数统计；该统计仅保存在当前进程内，不写入数据库。
+包括总调用次数、input/output/total token，以及 `evidence`、`summary`、`outline` 各阶段明细。
+evidence 截断重试和 summary 修复均按实际请求次数统计；该统计仅保存在当前进程内，不写入数据库。
 
 ## Pipeline 参数
 
@@ -308,12 +320,18 @@ facts 截断重试和 summary 修复均按实际请求次数统计；该统计�
 |------|------|
 | `metadata.first_pages` | 本地元数据和标识提取读取的前几页。 |
 | `parsing.min_text_characters` | 判断 PDF 是否具有有效文本层的最低字符数。 |
-| `summarization.max_chunk_characters` | 长论文事实提取的单块字符上限。 |
-| `summarization.fact_max_output_tokens` | 单个 facts 请求的最大输出 token。 |
+| `summarization.strategy` | `auto`（按预算自动选择）、`full`（全文生成，超预算时报错）或 `hierarchical`（语义切块 + evidence 汇总）。 |
+| `summarization.chunk_max_input_tokens` | 分层模式下单个 evidence 请求的输入 token 上限（含 prompt 开销）。 |
+| `summarization.chunk_overlap_paragraphs` | 相邻块之间重叠的段落数。 |
+| `summarization.fact_max_output_tokens` | 单个 evidence 请求的最大输出 token。 |
 | `summarization.summary_max_output_tokens` | 最终 Summary 和修复请求的最大输出 token。 |
 | `outlining.max_output_tokens` | 英文 Outline 请求的最大输出 token。 |
 
-如果模型上下文较小，应降低 `max_chunk_characters`。如果响应因为 `finish_reason=length` 被截断，应提高对应输出 token 上限，或进一步缩小输入块。
+上下文预算由 `providers.llm` 的全局参数控制：`context_window_tokens` 是模型上下文上限，
+`max_context_utilization` 限制最大利用率，`safety_margin_tokens` 是安全余量。token 估算按
+`len(text) / chars_per_token` 计算，英文默认值 4.0。全文请求（prompt + schema + 论文全文 +
+输出预留）超过预算时，`auto` 自动切换到分层模式。如果响应因为 `finish_reason=length` 被截断，
+应提高对应输出 token 上限，或进一步缩小 `chunk_max_input_tokens`。
 
 ## 自定义 Prompt
 
@@ -321,8 +339,10 @@ facts 截断重试和 summary 修复均按实际请求次数统计；该统计�
 
 ```text
 ../passagen-core/src/passagen/resources/prompts/
-  facts-v2.txt
-  summary-v2.txt
+  evidence-v3.txt
+  summary-v3.txt
+  summary-full-v3.txt
+  reduce-v3.txt
   repair-v2.txt
   outline-v2.txt
 ```
@@ -332,8 +352,10 @@ facts 截断重试和 summary 修复均按实际请求次数统计；该统计�
 ```yaml
 pipeline:
   summarization:
-    facts_prompt_path: prompts/facts.txt
+    facts_prompt_path: prompts/evidence.txt
     summary_prompt_path: prompts/summary.txt
+    full_prompt_path: prompts/summary-full.txt
+    reduce_prompt_path: prompts/reduce.txt
     repair_prompt_path: prompts/repair.txt
   outlining:
     prompt_path: prompts/outline.txt
@@ -343,8 +365,10 @@ pipeline:
 
 | 模板 | 必需占位符 |
 |------|------------|
-| facts | `$schema`, `$chunk` |
-| summary | `$schema`, `$identity`, `$facts` |
+| facts（分块 evidence 提取） | `$schema`, `$chunk` |
+| summary（evidence 汇总） | `$schema`, `$identity`, `$evidence` |
+| full（全文 Summary） | `$schema`, `$identity`, `$paper` |
+| reduce（evidence 中间归并） | `$schema`, `$evidence` |
 | repair | `$schema`, `$validation_error`, `$candidate` |
 | outline | `$schema`, `$summary` |
 

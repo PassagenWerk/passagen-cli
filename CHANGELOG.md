@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- `passagen config check` also validates the new `full` and `reduce` summary prompt templates and
+  displays the summarization strategy, chunk budget, and global LLM budget settings.
+- `passagen.yaml` / `passagen.example.yaml`: removed `summarization.max_chunk_characters`; added
+  `summarization.strategy`, `chunk_max_input_tokens`, `chunk_overlap_paragraphs`,
+  `full_prompt_path`, `reduce_prompt_path`, and the global LLM budget fields
+  under `providers.llm`.
+
 ## [0.2.0] - 2026-09-04
 
 ### Changed
