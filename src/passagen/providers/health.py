@@ -47,7 +47,7 @@ def check_provider_health(settings: ProvidersSettings) -> ProviderHealthSnapshot
         checks["arxiv"] = lambda: http_status(
             settings.arxiv.base_url.rstrip("/") + "/api/query",
             timeout,
-            params={"search_query": "all:test", "max_results": "0"},
+            params={"search_query": "all:test", "max_results": "1"},
         )
     else:
         statuses["arxiv"] = ProviderStatus("arxiv", False, "disabled by configuration")
