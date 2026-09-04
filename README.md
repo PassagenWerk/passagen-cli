@@ -38,8 +38,9 @@ PDF
 ## 安装
 
 ```bash
-git clone <repository-url> Passagen
-cd Passagen
+git clone <passagen-core-repository-url> passagen-core
+git clone <passagen-cli-repository-url> passagen-cli
+cd passagen-cli
 uv sync --frozen
 cp passagen.example.yaml passagen.yaml
 uv run passagen config check
@@ -319,7 +320,7 @@ facts 截断重试和 summary 修复均按实际请求次数统计；该统计�
 内置 Prompt 位于：
 
 ```text
-src/passagen/resources/prompts/
+../passagen-core/src/passagen/resources/prompts/
   facts-v2.txt
   summary-v2.txt
   repair-v2.txt
@@ -565,9 +566,9 @@ uv build
 
 更多设计与运维细节见：
 
-- [`docs/design.md`](docs/design.md)
+- [`passagen-core/docs/design.md`](../passagen-core/docs/design.md)
 - [`docs/architecture.md`](docs/architecture.md)
-- [`docs/roadmap.md`](docs/roadmap.md)
+- [`passagen-core/docs/roadmap.md`](../passagen-core/docs/roadmap.md)
 - [`docs/operations.md`](docs/operations.md)
 
 ## 许可证

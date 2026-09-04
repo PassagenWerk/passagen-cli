@@ -4,7 +4,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from passagen.cli.logging import (
+from passagen_cli.logging import (
     archive_execution_logs,
     configure_execution_logging,
     set_execution_log_level,
@@ -12,12 +12,13 @@ from passagen.cli.logging import (
 
 
 def _reset_passagen_logger() -> None:
-    logger = logging.getLogger("passagen")
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-        handler.close()
-    logger.setLevel(logging.NOTSET)
-    logger.propagate = True
+    for logger_name in ("passagen", "passagen_cli"):
+        logger = logging.getLogger(logger_name)
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+            handler.close()
+        logger.setLevel(logging.NOTSET)
+        logger.propagate = True
 
 
 def test_execution_log_uses_one_timestamped_directory(tmp_path: Path) -> None:

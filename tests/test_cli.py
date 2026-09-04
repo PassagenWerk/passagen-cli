@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pymupdf
 import pytest
-from typer.testing import CliRunner
-
 from passagen.catalog import CatalogService
-from passagen.cli import app
 from passagen.providers import LlmResponse, ProviderHealthSnapshot, ProviderStatus
 from passagen.storage.database import SCHEMA_VERSION, connect_database
 from passagen.storage.repository import list_papers
+from typer.testing import CliRunner
+
+from passagen_cli import app
 
 runner = CliRunner()
 
@@ -31,7 +31,7 @@ def isolate_cli_working_directory(
         lambda _settings: _FakeLlmProvider(),
     )
     monkeypatch.setattr(
-        importlib.import_module("passagen.cli.app"),
+        importlib.import_module("passagen_cli.app"),
         "check_provider_health",
         lambda _settings: ProviderHealthSnapshot(
             {
@@ -109,7 +109,7 @@ def test_version_uses_package_metadata() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.stdout.strip() == version("passagen")
+    assert result.stdout.strip() == version("passagen-cli")
 
 
 def _health_snapshot(*available: str, unavailable: str) -> ProviderHealthSnapshot:
@@ -130,7 +130,7 @@ def test_check_reports_reachable_providers(
     config_path = tmp_path / "passagen.yaml"
     write_offline_config(config_path)
     monkeypatch.setattr(
-        "passagen.cli.commands.health.check_provider_health",
+        "passagen_cli.commands.health.check_provider_health",
         lambda _settings: _health_snapshot("arxiv", "crossref", "grobid", "llm", unavailable=""),
     )
 
@@ -149,7 +149,7 @@ def test_check_fails_when_a_provider_is_unreachable(
     config_path = tmp_path / "passagen.yaml"
     write_offline_config(config_path)
     monkeypatch.setattr(
-        "passagen.cli.commands.health.check_provider_health",
+        "passagen_cli.commands.health.check_provider_health",
         lambda _settings: _health_snapshot("arxiv", "crossref", "llm", unavailable="grobid"),
     )
 

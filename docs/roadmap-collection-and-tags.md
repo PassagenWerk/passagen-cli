@@ -67,7 +67,7 @@ passagen tag rename <tag-id> <new-name>
 
 这是一个小功能，直接作为一个增量完成，不拆分多个交付阶段：
 
-- 在 `passagen.cli.commands` 中增加 collection 和 tag Typer 子命令。
+- 在 `passagen_cli.commands` 中增加 collection 和 tag Typer 子命令。
 - 在 CLI composition root 中注册 `collection` 和 `tag`。
 - 命令从 root context 读取 settings，并构造共享 `CatalogService`。
 - Collection 操作复用 Catalog 现有方法。

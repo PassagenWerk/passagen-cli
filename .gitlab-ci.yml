@@ -14,6 +14,8 @@ cache:
     - .uv-cache/
 
 before_script:
+  - apt-get update && apt-get install -y --no-install-recommends git
+  - git clone --depth 1 "${CI_SERVER_PROTOCOL}://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_PROJECT_NAMESPACE}/passagen-core.git" ../passagen-core
   - uv sync --frozen
 
 ruff:
@@ -41,7 +43,7 @@ pytest:
       -o addopts=""
       -m "not slow"
       --import-mode=importlib
-      --cov=passagen
+      --cov=passagen_cli
       --cov-report=term-missing
       --cov-report=xml:reports/coverage/coverage.xml
       --junitxml=reports/pytest/junit.xml
@@ -81,7 +83,7 @@ build-package:
   script:
     - test "v$(uv run passagen --version)" = "$CI_COMMIT_TAG"
     - uv build
-    - uvx --from ./dist/passagen-*.whl passagen --version
+    - uvx --from ./dist/passagen_cli-*.whl passagen --version
   artifacts:
     expire_in: never
     paths:

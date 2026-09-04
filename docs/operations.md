@@ -1,164 +1,133 @@
-# Installation And Operations
+# Passagen CLI Installation And Operations
 
-## Clean Installation
+本文档说明 CLI 的安装、配置和命令使用。数据库、artifact、provider 和 pipeline 的稳定
+运行语义见
+[`passagen-core/docs/operations.md`](../../passagen-core/docs/operations.md)。
+
+## Source Installation
+
+开发环境需要相邻的 Core 和 CLI checkout：
+
+```text
+Passagen/
+  passagen-core/
+  passagen-cli/
+  passagen-web/
+```
 
 ```bash
-git clone <repository-url> Passagen
-cd Passagen
+cd passagen-cli
 uv sync --frozen
 cp passagen.example.yaml passagen.yaml
 uv run passagen config check
 uv run passagen db init
 ```
 
-Runtime data is stored below the configured `data_dir`. The local `passagen.yaml`, database,
-artifacts, logs, and generated distributions are excluded from Git.
+`pyproject.toml` 在开发环境中通过 editable source 使用 `../passagen-core`。发布安装时，
+`passagen-cli` 通过正常 package dependency 安装兼容版本的 `passagen-core`。
 
-Database migrations are bundled with the installed package. `passagen db init` creates a new
-database or upgrades an existing one in place; a legacy Schema v1 database is validated and
-stamped without rebuilding its application tables. Use `passagen db backup` before moving or
-manually modifying a database.
+## Configuration
 
-## GROBID
-
-Start GROBID locally with Docker:
+CLI 默认读取当前工作目录的 `passagen.yaml`。入口支持：
 
 ```bash
-docker run --rm --init -p 8070:8070 lfoppiano/grobid:0.8.2
-curl http://localhost:8070/api/isalive
+passagen --config <path> <command>
+passagen --data-dir <path> <command>
+passagen --debug <command>
 ```
 
-Configure it in `passagen.yaml`:
-
-```yaml
-providers:
-  grobid:
-    base_url: http://localhost:8070
-    timeout_seconds: 60
-pipeline:
-  parsing:
-    parser: auto
-```
-
-Use `parser: pymupdf` when GROBID is unavailable. `auto` prefers GROBID and uses the configured
-fallback behavior; `grobid` requires the service.
-
-## LLM And LiteLLM
-
-```yaml
-providers:
-  llm:
-    base_url: http://localhost:4000/v1
-    model: paper-facts
-    api_key_env: PASSAGEN_API_KEY
-    timeout_seconds: 120
-    disable_thinking: true
-```
+配置也可以通过嵌套环境变量覆盖。LLM API key 的变量名由
+`providers.llm.api_key_env` 指定，例如：
 
 ```bash
 export PASSAGEN_API_KEY=your-key
 ```
 
-When `disable_thinking` is true, Passagen adds this top-level request field:
+API key 不会出现在 `config check`、execution log、LLM diagnostics 或数据库中。
 
-```json
-{"thinking": {"type": "disabled"}}
-```
-
-The API key value is used only in the Authorization header. Configuration output, execution logs,
-LLM diagnostics, and database rows do not store it.
-
-## Commands
+## Processing Commands
 
 ```bash
 passagen scan <directory>
-passagen update [paper-id] [--force]
 passagen run <directory>
+passagen update [paper-id] [--force]
 passagen metadata <paper-id> [--force]
 passagen parse <paper-id> [--parser auto|grobid|pymupdf] [--force]
 passagen summarize <paper-id> [--force]
 passagen outline <paper-id> [--force]
-passagen list [--status STATUS]
-passagen show <paper-id>
-passagen db backup [destination]
-passagen artifacts check
 ```
 
-There is no automatic in-process retry. A failure leaves the Paper at the last successful stage;
-correct the cause and invoke `update` again. `--force` rebuilds from metadata instead of resuming.
+失败后再次执行 `update` 会从最后成功阶段继续；`--force` 从 metadata 开始重建。具体状态、
+缓存和 artifact 规则由 Core 定义。
 
-## Prompt Templates
-
-Passagen ships versioned templates for fact extraction, summary generation, summary repair, and
-English outline generation. Override them with file paths in `passagen.yaml`:
-
-```yaml
-pipeline:
-  summarization:
-    facts_prompt_path: prompts/facts.txt
-    summary_prompt_path: prompts/summary.txt
-    repair_prompt_path: prompts/repair.txt
-  outlining:
-    prompt_path: prompts/outline.txt
-```
-
-Use `null` to select the built-in template. `passagen config check` verifies that every configured
-file is readable and contains exactly the required placeholders:
-
-```text
-facts:   $schema, $chunk
-summary: $schema, $identity, $facts
-repair:  $schema, $validation_error, $candidate
-outline: $schema, $summary
-```
-
-Templates use Python `string.Template` syntax. Literal dollar signs must be written as `$$`.
-Pydantic models remain the canonical output Schema and are embedded into templates through
-`$schema`. Fact, summary, and outline responses are validated before becoming artifacts. The fact
-cache key includes the fact-template SHA-256, so changing that template invalidates cached facts.
-Run `update <paper-id> --force` after changing summary, repair, or outline templates so existing
-final artifacts are regenerated.
-
-Summary Schema v2 is incompatible with earlier Summary artifacts. Rebuild papers created with
-Schema v1 by running `update <paper-id> --force`.
-
-## Backup And Transfer
-
-Create a transactionally consistent SQLite backup before copying user data:
+## Library Commands
 
 ```bash
-uv run passagen db backup
-uv run passagen artifacts check
+passagen list [--status STATUS]
+passagen show <paper-id>
+passagen collection create <name>
+passagen collection list
+passagen collection add <collection-id> <paper-id>
+passagen collection remove <collection-id> <paper-id>
+passagen collection rename <collection-id> <new-name>
+passagen collection delete <collection-id>
+passagen tag create <name>
+passagen tag list
+passagen tag add <tag-id> <paper-id>
+passagen tag remove <tag-id> <paper-id>
+passagen tag rename <tag-id> <new-name>
+passagen tag delete <tag-id>
 ```
 
-To move Passagen data to another machine, copy the complete `data_dir`, including the database,
-`pdfs/`, and `papers/`. Keep relative paths unchanged, then run `artifacts check` at the destination.
+Collection 和 tag 的详细命令 contract 见
+[`roadmap-collection-and-tags.md`](roadmap-collection-and-tags.md)。
+
+## Maintenance Commands
+
+```bash
+passagen config check
+passagen check
+passagen db init
+passagen db status
+passagen db backup [destination]
+passagen artifacts check
+passagen logs clean
+```
+
+迁移或手工处理数据前先执行 `db backup`。跨机器迁移必须复制完整 `data_dir`，然后运行
+`artifacts check`，不能只复制 SQLite 文件。
+
+## Execution Logs
+
+每次命令在当前工作目录的 `logs/<execution-id>/log.txt` 写入 CLI execution log。默认终端
+只显示 warning 及以上日志，`--debug` 显示详细日志。`passagen logs clean` 将历史目录归档到
+`logs/old/`。
+
+Execution log 只用于宿主进程运行信息。可复用 artifact、LLM call 元数据以及后续统一的
+prompt/raw response diagnostics 由 Core 管理。
 
 ## Common Errors
 
+`Database is not initialized`
+
+执行 `passagen db init`。该命令同时升级 Core 提供的 forward migrations。
+
 `environment variable PASSAGEN_API_KEY is not set`
 
-Set the environment variable named by `providers.llm.api_key_env` in the same shell that starts
-Passagen.
+在启动 Passagen 的同一个 shell 中设置配置指定的变量。
 
 `Provider llm is unavailable`
 
-Check `base_url`, authentication, the LiteLLM `/models` route, and firewall access. A successful
-health check does not guarantee that the selected model alias exists.
-
-`OpenAI-compatible LLM returned an empty response`
-
-Inspect `finish_reason`, output tokens, and reasoning tokens in the error. For supported reasoning
-models, enable `disable_thinking` or increase the output limit if reasoning consumed the budget.
+检查 `base_url`、认证、模型名称和 `/models` route。
 
 `Provider grobid is unavailable`
 
-Check `/api/isalive`, or select `pipeline.parsing.parser: pymupdf`.
+检查 GROBID `/api/isalive`，或将 parser 设为 `pymupdf`。
 
 `no_text_layer`
 
-The PDF is scanned or contains no usable text layer. OCR is outside the first release scope.
+PDF 没有可用文本层；当前版本不提供 OCR。
 
-`artifact file is missing` or a hash mismatch
+`artifact file is missing` 或 hash 不匹配
 
-Restore the complete `data_dir` from backup. Do not edit managed files directly.
+恢复完整 `data_dir` 备份，不要直接编辑受管理文件。
