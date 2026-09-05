@@ -8,7 +8,7 @@ import pytest
 from passagen.catalog import CatalogService
 from passagen.providers import LlmResponse, ProviderHealthSnapshot, ProviderStatus
 from passagen.storage.database import SCHEMA_VERSION, connect_database
-from passagen.storage.repository import list_papers
+from passagen.storage.repository import get_artifact, list_papers, update_paper_abstract
 from typer.testing import CliRunner
 
 from passagen_cli import app
@@ -31,6 +31,10 @@ def isolate_cli_working_directory(
         lambda _settings: _FakeLlmProvider(),
     )
     monkeypatch.setattr(
+        "passagen.stages.abstract_fixing.service.OpenAICompatibleProvider",
+        lambda _settings: _FakeLlmProvider(),
+    )
+    monkeypatch.setattr(
         importlib.import_module("passagen_cli.app"),
         "check_provider_health",
         lambda _settings: ProviderHealthSnapshot(
@@ -44,7 +48,7 @@ def isolate_cli_working_directory(
 
 class _FakeLlmProvider:
     provider_name = "fake"
-    model = "test-model"
+    model = "gpt-4o-mini"
     calls = 0
 
     def generate(self, prompt: str, *, max_tokens: int) -> LlmResponse:
@@ -55,6 +59,13 @@ class _FakeLlmProvider:
         if "Create a detailed English technical-paper outline" in prompt:
             return LlmResponse(
                 '{"introduction":{"thesis":"The paper introduces a test problem.","points":[]}}',
+                input_tokens=10,
+                output_tokens=5,
+            )
+        if "conservative copy editor" in prompt:
+            return LlmResponse(
+                '{"cleaned_abstract":"A cleaned author abstract with its original claims intact.",'
+                '"corrections":["Repaired extraction spacing"]}',
                 input_tokens=10,
                 output_tokens=5,
             )
@@ -190,6 +201,7 @@ def test_check_fails_when_a_provider_is_unreachable(
         (["update", "--help"], "last successful stage"),
         (["parse", "--help"], "Parse full text into extracted.json"),
         (["backfill-abstracts", "--help"], "Extract missing author abstracts"),
+        (["fix-abstracts", "--help"], "validated LLM-cleaned views"),
         (["summarize", "--help"], "Structured Summary v2"),
         (["outline", "--help"], "hierarchical English technical outline"),
         (["show", "--help"], "Show paper metadata"),
@@ -487,6 +499,38 @@ def test_backfill_abstracts_preserves_status_and_does_not_call_llm(
     assert "updated: 0, skipped: 1, not found: 0, failed: 0" in repeated.stdout
 
 
+def test_fix_abstracts_creates_and_reuses_cleaned_artifact(tmp_path: Path) -> None:
+    source_dir = tmp_path / "inbox"
+    write_metadata_pdf(source_dir / "paper.pdf", "Abstract Fix Paper")
+    config_path = tmp_path / "passagen.yaml"
+    write_offline_config(config_path)
+    data_dir = tmp_path / "data"
+    common = ["--config", str(config_path), "--data-dir", str(data_dir)]
+    assert runner.invoke(app, [*common, "scan", str(source_dir)]).exit_code == 0
+    paper = list_papers(data_dir / "passagen.db")[0]
+    update_paper_abstract(
+        data_dir / "passagen.db",
+        paper.id,
+        "A raw author abstract with its original claims intact.",
+        source="grobid",
+    )
+    _FakeLlmProvider.calls = 0
+
+    result = runner.invoke(app, [*common, "fix-abstracts", paper.id])
+
+    assert result.exit_code == 0
+    assert "updated: 1, skipped: 0, failed: 0" in result.stdout
+    artifact = get_artifact(data_dir / "passagen.db", paper.id, "abstract_cleaned_json")
+    assert artifact is not None
+    assert (data_dir / artifact.path).is_file()
+    assert _FakeLlmProvider.calls == 1
+
+    repeated = runner.invoke(app, [*common, "fix-abstracts", paper.id])
+    assert repeated.exit_code == 0
+    assert "updated: 0, skipped: 1, failed: 0" in repeated.stdout
+    assert _FakeLlmProvider.calls == 1
+
+
 @pytest.mark.slow
 def test_update_one_then_all_papers(tmp_path: Path) -> None:
     source_dir = tmp_path / "inbox"
@@ -503,10 +547,11 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
     result = runner.invoke(app, [*common, "update", papers["first.pdf"].id])
 
     assert result.exit_code == 0
-    assert "Paper 1/1 [stage 1/4: metadata]" in result.stdout
-    assert "Paper 1/1 [stage 2/4: full text]" in result.stdout
-    assert "Paper 1/1 [stage 3/4: summary]" in result.stdout
-    assert "Paper 1/1 [stage 4/4: outline]" in result.stdout
+    assert "Paper 1/1 [stage 1/5: metadata]" in result.stdout
+    assert "Paper 1/1 [stage 2/5: full text]" in result.stdout
+    assert "Paper 1/1 [stage 3/5: abstract fix]" in result.stdout
+    assert "Paper 1/1 [stage 4/5: summary]" in result.stdout
+    assert "Paper 1/1 [stage 5/5: outline]" in result.stdout
     assert "updated: 1, skipped: 0, failed: 0" in result.stdout
     update_log = latest_execution_log(tmp_path)
     assert "update stage started:" in update_log

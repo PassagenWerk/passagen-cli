@@ -12,6 +12,7 @@ from passagen.config import ConfigError, load_settings
 from passagen.providers import LlmCallStats, ProviderHealthSnapshot, check_provider_health
 
 from passagen_cli.commands import (
+    abstract_fixing,
     abstracts,
     artifacts,
     config,
@@ -66,6 +67,10 @@ app.command(
     "backfill-abstracts",
     help="Extract missing author abstracts without changing status or generated artifacts.",
 )(abstracts.backfill_abstracts_command)
+app.command(
+    "fix-abstracts",
+    help="Create validated LLM-cleaned views of author abstracts.",
+)(abstract_fixing.fix_abstracts_command)
 app.command("show", help="Show paper metadata, last successful stage, and managed artifact paths.")(
     query.show
 )
@@ -127,6 +132,7 @@ def main(
         "parse",
         "summarize",
         "outline",
+        "fix-abstracts",
         "run",
     }
     provider_health = (

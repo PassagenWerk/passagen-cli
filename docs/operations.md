@@ -57,6 +57,7 @@ passagen update [paper-id] [--force]
 passagen metadata <paper-id> [--force]
 passagen parse <paper-id> [--parser auto|grobid|pymupdf] [--force]
 passagen backfill-abstracts [paper-id] [--parser auto|grobid|pymupdf] [--force]
+passagen fix-abstracts [paper-id] [--force]
 passagen summarize <paper-id> [--force]
 passagen outline <paper-id> [--force]
 ```
@@ -67,6 +68,11 @@ passagen outline <paper-id> [--force]
 `backfill-abstracts` 只从受管理 PDF 提取 canonical Abstract。省略 Paper ID 时处理全部
 缺少 Abstract 的论文；它不改变 Paper 状态、不重建 `extracted.json`、Summary 或 Outline，
 也不调用 LLM。`--force` 可以刷新 parser 来源的 Abstract，但不会覆盖用户编辑值。
+
+默认 update pipeline 会在全文解析后执行 Abstract fixing。原始 Author Abstract 保留在
+Paper metadata 中，清洗文本写入 `abstract_cleaned_json` artifact；结果按原文、prompt 和模型
+缓存，校验失败只产生 warning，不阻塞 Summary 和 Outline。`fix-abstracts` 可为历史论文单独
+生成这些 artifact，省略 Paper ID 时处理所有已有 Abstract 的论文。
 
 ## Library Commands
 

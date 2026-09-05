@@ -41,6 +41,10 @@ pipeline:
     # Use pymupdf explicitly when no GROBID service is available
     parser: auto
     min_text_characters: 10
+  abstract_fixing:
+    enabled: true
+    max_output_tokens: 2000
+    prompt_path: null
   summarization:
     # auto picks full-paper or hierarchical summarization from the context budget
     strategy: auto
