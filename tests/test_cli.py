@@ -8,7 +8,7 @@ import pytest
 from passagen.catalog import CatalogService
 from passagen.providers import LlmResponse, ProviderHealthSnapshot, ProviderStatus
 from passagen.storage.database import SCHEMA_VERSION, connect_database
-from passagen.storage.repository import get_artifact, list_papers, update_paper_abstract
+from passagen.storage.repository import list_papers
 from typer.testing import CliRunner
 
 from passagen_cli import app
@@ -200,8 +200,7 @@ def test_check_fails_when_a_provider_is_unreachable(
         (["metadata", "--help"], "Extract local PDF metadata"),
         (["update", "--help"], "last successful stage"),
         (["parse", "--help"], "Parse full text into extracted.json"),
-        (["backfill-abstracts", "--help"], "Extract missing author abstracts"),
-        (["fix-abstracts", "--help"], "validated LLM-cleaned views"),
+        (["abstract", "--help"], "Extract author abstracts when missing"),
         (["summarize", "--help"], "Structured Summary v2"),
         (["outline", "--help"], "hierarchical English technical outline"),
         (["show", "--help"], "Show paper metadata"),
@@ -450,16 +449,10 @@ def test_parse_command_writes_extracted_artifact(tmp_path: Path) -> None:
 
 
 @pytest.mark.slow
-def test_backfill_abstracts_preserves_status_and_does_not_call_llm(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        "passagen_cli.commands.abstracts.check_parser_health",
-        lambda _settings: pytest.fail("PyMuPDF backfill should not check external providers"),
-    )
+def test_abstract_stage_extracts_and_cleans_without_changing_status(tmp_path: Path) -> None:
     source_dir = tmp_path / "inbox"
-    abstract = "This paper presents a token-free abstract backfill workflow."
-    write_abstract_pdf(source_dir / "paper.pdf", "Backfill Paper", abstract)
+    abstract = "A raw author abstract with its original claims intact."
+    write_abstract_pdf(source_dir / "paper.pdf", "Abstract Paper", abstract)
     config_path = tmp_path / "passagen.yaml"
     write_offline_config(config_path)
     data_dir = tmp_path / "data"
@@ -472,16 +465,18 @@ def test_backfill_abstracts_preserves_status_and_does_not_call_llm(
 
     result = runner.invoke(
         app,
-        [*common, "backfill-abstracts", paper.id, "--parser", "pymupdf"],
+        [*common, "abstract", paper.id, "--parser", "pymupdf"],
     )
 
     assert result.exit_code == 0
-    assert "updated: 1, skipped: 0, not found: 0, failed: 0" in result.stdout
+    output = " ".join(result.stdout.split())
+    assert "extracted: 1, extraction skipped: 0, not found: 0, cleaned: 1" in output
+    assert "cleaning skipped: 0, failed: 0" in output
     updated = list_papers(data_dir / "passagen.db")[0]
     assert updated.abstract == abstract
     assert updated.status.value == "outlined"
     assert updated.metadata_sources["abstract"] == "pdf"
-    assert _FakeLlmProvider.calls == 0
+    assert _FakeLlmProvider.calls == 1
     with connect_database(data_dir / "passagen.db") as connection:
         kinds = {
             row[0]
@@ -489,45 +484,16 @@ def test_backfill_abstracts_preserves_status_and_does_not_call_llm(
                 "SELECT kind FROM artifacts WHERE paper_id = ?", (paper.id,)
             )
         }
-    assert kinds == {"original_pdf"}
+    assert kinds == {"abstract_cleaned_json", "original_pdf"}
 
     repeated = runner.invoke(
         app,
-        [*common, "backfill-abstracts", paper.id, "--parser", "pymupdf"],
+        [*common, "abstract", paper.id, "--parser", "pymupdf"],
     )
     assert repeated.exit_code == 0
-    assert "updated: 0, skipped: 1, not found: 0, failed: 0" in repeated.stdout
-
-
-def test_fix_abstracts_creates_and_reuses_cleaned_artifact(tmp_path: Path) -> None:
-    source_dir = tmp_path / "inbox"
-    write_metadata_pdf(source_dir / "paper.pdf", "Abstract Fix Paper")
-    config_path = tmp_path / "passagen.yaml"
-    write_offline_config(config_path)
-    data_dir = tmp_path / "data"
-    common = ["--config", str(config_path), "--data-dir", str(data_dir)]
-    assert runner.invoke(app, [*common, "scan", str(source_dir)]).exit_code == 0
-    paper = list_papers(data_dir / "passagen.db")[0]
-    update_paper_abstract(
-        data_dir / "passagen.db",
-        paper.id,
-        "A raw author abstract with its original claims intact.",
-        source="grobid",
-    )
-    _FakeLlmProvider.calls = 0
-
-    result = runner.invoke(app, [*common, "fix-abstracts", paper.id])
-
-    assert result.exit_code == 0
-    assert "updated: 1, skipped: 0, failed: 0" in result.stdout
-    artifact = get_artifact(data_dir / "passagen.db", paper.id, "abstract_cleaned_json")
-    assert artifact is not None
-    assert (data_dir / artifact.path).is_file()
-    assert _FakeLlmProvider.calls == 1
-
-    repeated = runner.invoke(app, [*common, "fix-abstracts", paper.id])
-    assert repeated.exit_code == 0
-    assert "updated: 0, skipped: 1, failed: 0" in repeated.stdout
+    output = " ".join(repeated.stdout.split())
+    assert "extracted: 0, extraction skipped: 1, not found: 0, cleaned: 0" in output
+    assert "cleaning skipped: 1, failed: 0" in output
     assert _FakeLlmProvider.calls == 1
 
 
@@ -549,7 +515,7 @@ def test_update_one_then_all_papers(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Paper 1/1 [stage 1/5: metadata]" in result.stdout
     assert "Paper 1/1 [stage 2/5: full text]" in result.stdout
-    assert "Paper 1/1 [stage 3/5: abstract fix]" in result.stdout
+    assert "Paper 1/1 [stage 3/5: abstract clean]" in result.stdout
     assert "Paper 1/1 [stage 4/5: summary]" in result.stdout
     assert "Paper 1/1 [stage 5/5: outline]" in result.stdout
     assert "updated: 1, skipped: 0, failed: 0" in result.stdout

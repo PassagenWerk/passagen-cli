@@ -12,8 +12,7 @@ from passagen.config import ConfigError, load_settings
 from passagen.providers import LlmCallStats, ProviderHealthSnapshot, check_provider_health
 
 from passagen_cli.commands import (
-    abstract_fixing,
-    abstracts,
+    abstract,
     artifacts,
     config,
     db,
@@ -56,6 +55,10 @@ app.command(
     help="Parse full text into extracted.json with GROBID, PyMuPDF, or automatic selection.",
 )(stages.parse_command)
 app.command(
+    "abstract",
+    help="Extract author abstracts when missing and create validated LLM-cleaned views.",
+)(abstract.abstract_command)
+app.command(
     "summarize",
     help="Generate and validate the general English Structured Summary v2.",
 )(stages.summarize_command)
@@ -63,14 +66,6 @@ app.command(
     "outline",
     help="Generate a hierarchical English technical outline from validated summary.json only.",
 )(stages.outline_command)
-app.command(
-    "backfill-abstracts",
-    help="Extract missing author abstracts without changing status or generated artifacts.",
-)(abstracts.backfill_abstracts_command)
-app.command(
-    "fix-abstracts",
-    help="Create validated LLM-cleaned views of author abstracts.",
-)(abstract_fixing.fix_abstracts_command)
 app.command("show", help="Show paper metadata, last successful stage, and managed artifact paths.")(
     query.show
 )
@@ -132,7 +127,7 @@ def main(
         "parse",
         "summarize",
         "outline",
-        "fix-abstracts",
+        "abstract",
         "run",
     }
     provider_health = (

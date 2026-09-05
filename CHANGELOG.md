@@ -9,10 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- `backfill-abstracts` command to extract missing author abstracts from managed PDFs without
-  changing paper status, rebuilding generated artifacts, or invoking an LLM.
-- `fix-abstracts` command for creating or refreshing validated cleaned-abstract artifacts; the
-  same non-blocking task now runs by default after full-text parsing in update pipelines.
+- Explicit, non-blocking `abstract` stage and command, which extracts missing canonical abstracts
+  and creates or refreshes validated cleaned-abstract artifacts before summarization.
 
 ## [0.3.1] - 2026-09-05
 
