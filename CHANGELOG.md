@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-05
+
 ### Added
 
 - Explicit, non-blocking `abstract` stage and command, which extracts missing canonical abstracts
@@ -14,6 +16,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Raised the `passagen-core` requirement to `>=0.5,<0.6` for the abstract stage and updated
+  shared configuration defaults.
 - Reorganized documentation around user startup and operations, with shared configuration owned by
   Passagen Core, forge-neutral cross-repository links, and the example configuration
   defaulting to DeepSeek `deepseek-flash-v4`.

@@ -1,13 +1,13 @@
 [project]
 name = "passagen-cli"
-version = "0.3.1"
+version = "0.4.0"
 description = "Manage paper PDFs and generate structured summaries"
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
-    "passagen-core>=0.3,<0.5",
+    "passagen-core>=0.5,<0.6",
     "rich>=13.9,<15",
     "typer>=0.15,<1",
 ]
