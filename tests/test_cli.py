@@ -107,6 +107,8 @@ providers:
     enabled: false
   arxiv:
     enabled: false
+  llm:
+    model: gpt-4o-mini
 pipeline:
   parsing:
     parser: pymupdf
