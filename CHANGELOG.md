@@ -12,6 +12,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Explicit, non-blocking `abstract` stage and command, which extracts missing canonical abstracts
   and creates or refreshes validated cleaned-abstract artifacts before summarization.
 
+### Changed
+
+- Reorganized documentation around user startup and operations, with shared configuration owned by
+  Passagen Core, forge-neutral cross-repository links, and the example configuration
+  defaulting to DeepSeek `deepseek-flash-v4`.
+
 ## [0.3.1] - 2026-09-05
 
 ### Changed

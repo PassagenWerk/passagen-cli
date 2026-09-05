@@ -1,6 +1,6 @@
 # Passagen CLI Code Style
 
-CLI 遵循 [`passagen-core` Python 基线](../../passagen-core/docs/code-style.md)，并补充以下
+CLI 遵循 Passagen Core 仓库的 docs/development/code-style.md，并补充以下
 适配器约束。
 
 ## Commands

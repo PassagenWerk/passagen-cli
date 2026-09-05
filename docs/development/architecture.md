@@ -17,7 +17,7 @@ shell
 `passagen.external` 等低层 adapter。
 
 共享业务架构见
-[`passagen-core/docs/architecture.md`](../../passagen-core/docs/architecture.md)。
+Passagen Core 仓库的 docs/development/architecture.md。
 
 ## Package Responsibilities
 

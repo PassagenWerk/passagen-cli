@@ -2,11 +2,12 @@ passagen:
   database_path: null
   debug: false
 
-# 外部 provider service 配置，按 provider 分包
 providers:
+  healthcheck_timeout_seconds: 3
   crossref:
     enabled: true
     base_url: https://api.crossref.org
+    # 建议填写联系邮箱以使用 Crossref polite pool。
     mailto: null
     timeout_seconds: 10
   arxiv:
@@ -14,31 +15,27 @@ providers:
     base_url: https://export.arxiv.org
     timeout_seconds: 10
   grobid:
-    # GROBID service root; health endpoint is /api/isalive
+    # GROBID health endpoint 是 <base_url>/api/isalive。
     base_url: http://localhost:8070
     timeout_seconds: 60
   llm:
-    # OpenAI-compatible API prefix; Passagen appends /chat/completions
-    base_url: https://api.openai.com/v1
-    model: gpt-4o-mini
-    # The secret value is read from this environment variable, never from YAML
+    # Passagen 会在 base_url 后添加 /chat/completions。
+    base_url: https://api.deepseek.com/v1
+    model: deepseek-flash-v4
+    # Secret 只从环境变量读取，不写入 YAML。
     api_key_env: PASSAGEN_API_KEY
     timeout_seconds: 120
-    # Enable for reasoning models behind a proxy when thinking should not consume output tokens
     disable_thinking: false
-    # Global context budget shared by every LLM call; the API does not report these reliably
     context_window_tokens: 128000
     max_context_utilization: 0.65
     safety_margin_tokens: 8000
-    # Token estimation is len(text) / chars_per_token; ~4.0 for English prose
     chars_per_token: 4.0
 
-# 各处理阶段的参数配置，按阶段分包
 pipeline:
   metadata:
     first_pages: 2
   parsing:
-    # Use pymupdf explicitly when no GROBID service is available
+    # 没有 GROBID 时设置为 pymupdf。
     parser: auto
     min_text_characters: 10
   abstract_fixing:
@@ -46,13 +43,13 @@ pipeline:
     max_output_tokens: 2000
     prompt_path: null
   summarization:
-    # auto picks full-paper or hierarchical summarization from the context budget
+    # auto 根据上下文预算选择 full 或 hierarchical。
     strategy: auto
     chunk_max_input_tokens: 24000
     chunk_overlap_paragraphs: 1
-    fact_max_output_tokens: 6000
-    summary_max_output_tokens: 6000
-    # null selects packaged prompts; custom templates must retain the documented placeholders
+    fact_max_output_tokens: 1500
+    summary_max_output_tokens: 3000
+    # null 使用 Core 内置 prompt。
     facts_prompt_path: null
     summary_prompt_path: null
     full_prompt_path: null
