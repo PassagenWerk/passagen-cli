@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-05
+
+### Changed
+
+- Widened the `passagen-core` dependency range to `>=0.3,<0.5` so the CLI can be installed
+  alongside Passagen Core 0.4.x; no command behavior changes.
+
 ## [0.3.0] - 2026-09-04
 
 ### Changed
