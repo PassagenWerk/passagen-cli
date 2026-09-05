@@ -2,7 +2,9 @@
 
 Passagen CLI 是本地论文处理入口。它将 PDF 导入受管理论文库，补全元数据，解析全文，并通过
 LLM 生成 cleaned Abstract、结构化英文 Summary 和技术 Outline。处理结果可继续通过
-[Passagen Web](/PassagenWerk/passagen-web) 浏览和整理。
+[Passagen Web](https://github.com/PassagenWerk/passagen-web) 浏览和整理。
+
+README 中的仓库链接指向 GitHub；在 GitLab 或 Gitea 镜像中，对应仓库位于同一 PassagenWerk 组的同名路径下。
 
 ## 功能
 
@@ -82,7 +84,7 @@ pipeline:
 ```
 
 完整字段、GROBID 启动方式、DeepSeek、metadata provider 和 pipeline 参数由 Core 统一定义，
-见 Passagen Core 仓库的 docs/user/configuration.md（[Passagen Core](/PassagenWerk/passagen-core)）。
+见 Passagen Core 仓库的 docs/user/configuration.md（[Passagen Core](https://github.com/PassagenWerk/passagen-core)）。
 
 ## 常用命令
 
@@ -144,7 +146,7 @@ PDF 没有可解析文本层。请先使用外部 OCR 工具生成带文本层�
 
 - [CLI 运行与命令](docs/user/operations.md)
 - [CLI 架构](docs/development/architecture.md)
-- [Passagen Core](/PassagenWerk/passagen-core) 的 docs/user/configuration.md
+- [Passagen Core](https://github.com/PassagenWerk/passagen-core) 的 docs/user/configuration.md
 - [Roadmap](docs/roadmap/README.md)
 
 ## 许可证
