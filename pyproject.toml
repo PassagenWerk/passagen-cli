@@ -1,6 +1,6 @@
 [project]
 name = "passagen-cli"
-version = "0.4.0"
+version = "0.5.0"
 description = "Manage paper PDFs and generate structured summaries"
 readme = "README.md"
 license = "AGPL-3.0-only"

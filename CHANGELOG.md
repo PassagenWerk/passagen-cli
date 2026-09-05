@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-05
+
+### Changed
+
+- Aligned the CLI minor version with the required Passagen Core `0.5.x` line; releases on the
+  same minor share one compatibility line, while patch versions remain independent. No command
+  behavior changes beyond `0.4.0`.
+
 ## [0.4.0] - 2026-09-05
 
 ### Added
