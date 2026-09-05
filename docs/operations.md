@@ -56,12 +56,17 @@ passagen run <directory>
 passagen update [paper-id] [--force]
 passagen metadata <paper-id> [--force]
 passagen parse <paper-id> [--parser auto|grobid|pymupdf] [--force]
+passagen backfill-abstracts [paper-id] [--parser auto|grobid|pymupdf] [--force]
 passagen summarize <paper-id> [--force]
 passagen outline <paper-id> [--force]
 ```
 
 失败后再次执行 `update` 会从最后成功阶段继续；`--force` 从 metadata 开始重建。具体状态、
 缓存和 artifact 规则由 Core 定义。
+
+`backfill-abstracts` 只从受管理 PDF 提取 canonical Abstract。省略 Paper ID 时处理全部
+缺少 Abstract 的论文；它不改变 Paper 状态、不重建 `extracted.json`、Summary 或 Outline，
+也不调用 LLM。`--force` 可以刷新 parser 来源的 Abstract，但不会覆盖用户编辑值。
 
 ## Library Commands
 

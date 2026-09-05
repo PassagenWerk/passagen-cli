@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `backfill-abstracts` command to extract missing author abstracts from managed PDFs without
+  changing paper status, rebuilding generated artifacts, or invoking an LLM.
+
 ## [0.3.1] - 2026-09-05
 
 ### Changed

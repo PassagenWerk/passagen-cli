@@ -74,6 +74,19 @@ def write_metadata_pdf(path: Path, title: str, text: str = "Paper body") -> None
         document.save(path)
 
 
+def write_abstract_pdf(path: Path, title: str, abstract: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with pymupdf.open() as document:
+        page = document.new_page()
+        page.insert_text((72, 72), title, fontsize=20)
+        page.insert_text((72, 110), "Abstract", fontsize=15)
+        page.insert_text((72, 140), abstract, fontsize=10)
+        page.insert_text((72, 180), "1 Introduction", fontsize=15)
+        page.insert_text((72, 210), "Introduction body.", fontsize=10)
+        document.set_metadata({"title": title, "author": "Test Author"})
+        document.save(path)
+
+
 def write_offline_config(path: Path) -> None:
     path.write_text(
         """
@@ -176,6 +189,7 @@ def test_check_fails_when_a_provider_is_unreachable(
         (["metadata", "--help"], "Extract local PDF metadata"),
         (["update", "--help"], "last successful stage"),
         (["parse", "--help"], "Parse full text into extracted.json"),
+        (["backfill-abstracts", "--help"], "Extract missing author abstracts"),
         (["summarize", "--help"], "Structured Summary v2"),
         (["outline", "--help"], "hierarchical English technical outline"),
         (["show", "--help"], "Show paper metadata"),
@@ -421,6 +435,56 @@ def test_parse_command_writes_extracted_artifact(tmp_path: Path) -> None:
     result = runner.invoke(app, [*common, "parse", paper.id])
     assert result.exit_code == 0
     assert "already parsed" in result.stdout
+
+
+@pytest.mark.slow
+def test_backfill_abstracts_preserves_status_and_does_not_call_llm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "passagen_cli.commands.abstracts.check_parser_health",
+        lambda _settings: pytest.fail("PyMuPDF backfill should not check external providers"),
+    )
+    source_dir = tmp_path / "inbox"
+    abstract = "This paper presents a token-free abstract backfill workflow."
+    write_abstract_pdf(source_dir / "paper.pdf", "Backfill Paper", abstract)
+    config_path = tmp_path / "passagen.yaml"
+    write_offline_config(config_path)
+    data_dir = tmp_path / "data"
+    common = ["--config", str(config_path), "--data-dir", str(data_dir)]
+    assert runner.invoke(app, [*common, "scan", str(source_dir)]).exit_code == 0
+    paper = list_papers(data_dir / "passagen.db")[0]
+    with connect_database(data_dir / "passagen.db") as connection:
+        connection.execute("UPDATE papers SET status = 'outlined' WHERE id = ?", (paper.id,))
+    _FakeLlmProvider.calls = 0
+
+    result = runner.invoke(
+        app,
+        [*common, "backfill-abstracts", paper.id, "--parser", "pymupdf"],
+    )
+
+    assert result.exit_code == 0
+    assert "updated: 1, skipped: 0, not found: 0, failed: 0" in result.stdout
+    updated = list_papers(data_dir / "passagen.db")[0]
+    assert updated.abstract == abstract
+    assert updated.status.value == "outlined"
+    assert updated.metadata_sources["abstract"] == "pdf"
+    assert _FakeLlmProvider.calls == 0
+    with connect_database(data_dir / "passagen.db") as connection:
+        kinds = {
+            row[0]
+            for row in connection.execute(
+                "SELECT kind FROM artifacts WHERE paper_id = ?", (paper.id,)
+            )
+        }
+    assert kinds == {"original_pdf"}
+
+    repeated = runner.invoke(
+        app,
+        [*common, "backfill-abstracts", paper.id, "--parser", "pymupdf"],
+    )
+    assert repeated.exit_code == 0
+    assert "updated: 0, skipped: 1, not found: 0, failed: 0" in repeated.stdout
 
 
 @pytest.mark.slow

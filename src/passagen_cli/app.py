@@ -12,6 +12,7 @@ from passagen.config import ConfigError, load_settings
 from passagen.providers import LlmCallStats, ProviderHealthSnapshot, check_provider_health
 
 from passagen_cli.commands import (
+    abstracts,
     artifacts,
     config,
     db,
@@ -61,6 +62,10 @@ app.command(
     "outline",
     help="Generate a hierarchical English technical outline from validated summary.json only.",
 )(stages.outline_command)
+app.command(
+    "backfill-abstracts",
+    help="Extract missing author abstracts without changing status or generated artifacts.",
+)(abstracts.backfill_abstracts_command)
 app.command("show", help="Show paper metadata, last successful stage, and managed artifact paths.")(
     query.show
 )
@@ -116,7 +121,14 @@ def main(
         settings.resolved_database_path,
         settings.debug,
     )
-    provider_commands = {"metadata", "update", "parse", "summarize", "outline", "run"}
+    provider_commands = {
+        "metadata",
+        "update",
+        "parse",
+        "summarize",
+        "outline",
+        "run",
+    }
     provider_health = (
         check_provider_health(settings.providers)
         if command in provider_commands

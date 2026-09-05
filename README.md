@@ -386,6 +386,7 @@ pipeline:
 | `passagen run <directory>` | 执行 scan，然后处理所有未完成论文。 |
 | `passagen metadata <paper-id>` | 单独执行元数据阶段。 |
 | `passagen parse <paper-id>` | 单独执行全文解析阶段。 |
+| `passagen backfill-abstracts [paper-id]` | 补齐作者 Abstract，不改变状态或调用 LLM。 |
 | `passagen summarize <paper-id>` | 单独生成 Structured Summary v2。 |
 | `passagen outline <paper-id>` | 单独生成英文 Outline。 |
 | `passagen update [paper-id]` | 从最后成功状态继续单篇或全部论文。 |
