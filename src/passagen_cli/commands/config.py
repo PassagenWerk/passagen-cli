@@ -42,6 +42,8 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row("debug", str(settings.debug).lower())
     table.add_row("providers.crossref", str(settings.providers.crossref.enabled).lower())
     table.add_row("providers.arxiv", str(settings.providers.arxiv.enabled).lower())
+    table.add_row("providers.citation_page", str(settings.providers.citation_page.enabled).lower())
+    table.add_row("providers.openalex", str(settings.providers.openalex.enabled).lower())
     table.add_row("providers.grobid.base_url", settings.providers.grobid.base_url)
     table.add_row("providers.llm.base_url", settings.providers.llm.base_url)
     table.add_row("providers.llm.model", settings.providers.llm.model)

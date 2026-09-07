@@ -14,6 +14,18 @@ providers:
     enabled: true
     base_url: https://export.arxiv.org
     timeout_seconds: 10
+  citation_page:
+    enabled: true
+    # 仅请求明确允许的 HTTPS 来源页主机；不支持通配符。
+    allowed_hosts:
+      - www.usenix.org
+    timeout_seconds: 10
+  openalex:
+    enabled: true
+    base_url: https://api.openalex.org
+    # 建议填写联系邮箱。
+    mailto: null
+    timeout_seconds: 10
   grobid:
     # GROBID health endpoint 是 <base_url>/api/isalive。
     base_url: http://localhost:8070
