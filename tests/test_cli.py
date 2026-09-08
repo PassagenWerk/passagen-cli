@@ -23,15 +23,7 @@ def isolate_cli_working_directory(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        "passagen.stages.summarization.service.OpenAICompatibleProvider",
-        lambda _settings: _FakeLlmProvider(),
-    )
-    monkeypatch.setattr(
-        "passagen.stages.outlining.service.OpenAICompatibleProvider",
-        lambda _settings: _FakeLlmProvider(),
-    )
-    monkeypatch.setattr(
-        "passagen.stages.abstract_fixing.service.OpenAICompatibleProvider",
+        "passagen.providers.llm.OpenAICompatibleProvider",
         lambda _settings: _FakeLlmProvider(),
     )
     monkeypatch.setattr(
@@ -108,7 +100,8 @@ providers:
   arxiv:
     enabled: false
   llm:
-    model: gpt-4o-mini
+    default:
+      model: gpt-4o-mini
 pipeline:
   parsing:
     parser: pymupdf

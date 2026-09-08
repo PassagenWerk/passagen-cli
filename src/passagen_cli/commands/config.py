@@ -45,22 +45,16 @@ def config_check(ctx: typer.Context) -> None:
     table.add_row("providers.citation_page", str(settings.providers.citation_page.enabled).lower())
     table.add_row("providers.openalex", str(settings.providers.openalex.enabled).lower())
     table.add_row("providers.grobid.base_url", settings.providers.grobid.base_url)
-    table.add_row("providers.llm.base_url", settings.providers.llm.base_url)
-    table.add_row("providers.llm.model", settings.providers.llm.model)
-    table.add_row(
-        "providers.llm.disable_thinking", str(settings.providers.llm.disable_thinking).lower()
-    )
-    table.add_row(
-        "providers.llm.context_window_tokens", str(settings.providers.llm.context_window_tokens)
-    )
-    table.add_row(
-        "providers.llm.max_context_utilization",
-        str(settings.providers.llm.max_context_utilization),
-    )
-    table.add_row(
-        "providers.llm.safety_margin_tokens", str(settings.providers.llm.safety_margin_tokens)
-    )
-    table.add_row("providers.llm.chars_per_token", str(settings.providers.llm.chars_per_token))
+    default_llm = settings.providers.llm.default
+    table.add_row("providers.llm.default.base_url", default_llm.base_url)
+    table.add_row("providers.llm.default.model", default_llm.model)
+    table.add_row("providers.llm.default.flavor", default_llm.flavor.value)
+    table.add_row("providers.llm.default.reasoning", default_llm.reasoning.value)
+    table.add_row("providers.llm.default.max_context_window", str(default_llm.max_context_window))
+    for name, profile in settings.providers.llm.profiles.items():
+        table.add_row(f"providers.llm.profiles.{name}.model", profile.model)
+    for purpose, profile_name in settings.providers.llm.tasks.items():
+        table.add_row(f"providers.llm.tasks.{purpose.value}", profile_name)
     table.add_row("pipeline.metadata.first_pages", str(settings.pipeline.metadata.first_pages))
     table.add_row("pipeline.parsing.parser", settings.pipeline.parsing.parser.value)
     table.add_row("pipeline.summarization.strategy", settings.pipeline.summarization.strategy.value)

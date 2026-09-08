@@ -70,9 +70,13 @@ uv run passagen --data-dir /path/to/library --config /path/to/passagen.yaml <com
 ```yaml
 providers:
   llm:
-    base_url: https://api.deepseek.com/v1
-    model: deepseek-flash-v4
-    api_key_env: PASSAGEN_API_KEY
+    default:
+      base_url: https://api.deepseek.com/v1
+      model: deepseek-flash-v4
+      api_key_env: PASSAGEN_API_KEY
+      max_context_window: 128000
+      flavor: deepseek
+      reasoning: disable
 ```
 
 没有 GROBID 时使用本地 parser：
