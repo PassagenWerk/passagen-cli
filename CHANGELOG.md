@@ -9,14 +9,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- Added `collection synthesize` and `collection compare` with Markdown/JSON output, explicit
-  partial-coverage and force-regeneration controls, and machine-readable stdout.
-- Added `collection ask` for persistent collection conversations with optional
-  `--conversation-id` continuation and `--force` regeneration, plus `collection review` and
-  `collection research` covering the review, comparison, gaps, and custom report kinds with
-  `--prompt`/`--prompt-file` custom questions; all reuse the Core conversation and report
-  services, write only the answer/report payload to stdout, and report stale sources and partial
-  coverage on stderr.
+- Added `collection synthesize` and `collection compare` for citation-checked collection
+  synthesis and comparison output. Both commands support Markdown and JSON output, explicit
+  partial coverage, and forced regeneration while keeping stdout machine-readable.
+- Added `collection ask` for persistent collection conversations. Questions can continue an
+  existing conversation with `--conversation-id`, force a fresh answer with `--force`, and render
+  either Markdown or the structured answer JSON.
+- Added `collection review` and `collection research` for review, comparison, research-gap, and
+  custom reports. Custom reports accept `--prompt` or `--prompt-file`; answers and reports reuse
+  the shared Core conversation and report services, write only the requested payload to stdout,
+  and report stale sources or partial coverage on stderr.
 
 ### Changed
 
