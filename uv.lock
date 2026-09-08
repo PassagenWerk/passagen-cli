@@ -620,7 +620,7 @@ wheels = [
 
 [[package]]
 name = "passagen-cli"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "passagen-core" },
@@ -663,7 +663,7 @@ dev = [
 
 [[package]]
 name = "passagen-core"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "../passagen-core" }
 dependencies = [
     { name = "alembic" },
