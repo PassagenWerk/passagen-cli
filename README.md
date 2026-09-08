@@ -105,6 +105,9 @@ passagen summarize <paper-id> [--force]
 passagen outline <paper-id> [--force]
 passagen collection synthesize <collection-id> [--format markdown|json] [--allow-partial] [--force]
 passagen collection compare <collection-id> [--format markdown|json] [--allow-partial] [--force]
+passagen collection ask <collection-id> <question> [--conversation-id <id>] [--format markdown|json] [--force]
+passagen collection review <collection-id> [--format markdown|json] [--allow-partial] [--force]
+passagen collection research <collection-id> [--kind review|comparison|gaps|custom] [--prompt <text> | --prompt-file <path>] [--format markdown|json] [--allow-partial] [--force]
 passagen collection --help
 passagen tag --help
 ```
@@ -113,6 +116,14 @@ Collection synthesis uses the ordered papers' validated Summary artifacts. It re
 summaries unless `--allow-partial` is explicit, and reuses an unchanged synthesis unless `--force`
 is supplied. The selected Markdown or JSON payload is written to stdout; status and warnings are
 written to stderr so output can be redirected safely.
+
+`collection ask` answers one question from collection sources through the Core conversation
+service. Without `--conversation-id` it creates a persistent conversation and prints its ID on
+stderr; pass that ID to continue the same conversation. `--force` regenerates instead of reusing a
+matching answer. `collection review` generates the citation-checked review report, and
+`collection research` covers the review, comparison, and gaps report kinds plus custom reports
+driven by `--prompt` or `--prompt-file`. Reports reuse an unchanged result unless `--force` is
+supplied; stale-source and partial-coverage warnings are written to stderr.
 
 Abstract clean 是显式但非阻塞的阶段。`passagen abstract` 会在缺少原文时尝试从 PDF 提取，
 然后生成或复用 cleaned artifact；原始 Author Abstract 始终保留。

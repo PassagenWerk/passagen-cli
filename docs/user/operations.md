@@ -47,6 +47,9 @@ passagen list [--status STATUS]
 passagen show <paper-id>
 passagen collection synthesize <collection-id> [--format markdown|json] [--allow-partial] [--force]
 passagen collection compare <collection-id> [--format markdown|json] [--allow-partial] [--force]
+passagen collection ask <collection-id> <question> [--conversation-id <id>] [--format markdown|json] [--force]
+passagen collection review <collection-id> [--format markdown|json] [--allow-partial] [--force]
+passagen collection research <collection-id> [--kind review|comparison|gaps|custom] [--prompt <text> | --prompt-file <path>] [--format markdown|json] [--allow-partial] [--force]
 passagen collection --help
 passagen tag --help
 ```
@@ -58,6 +61,13 @@ keywords 不自动合并。
 matrix，Markdown 输出 Core 的完整 synthesis（其中包含 comparison）。两个命令默认要求全部论文
 具有有效 Summary；`--allow-partial` 显式允许部分覆盖，`--force` 跳过未变化结果的复用。payload
 写入 stdout，运行状态、warning 和错误写入 stderr。
+
+`collection ask` 通过 Core conversation service 针对整个 collection 回答一个问题。不带
+`--conversation-id` 时会创建持久化 conversation 并把 ID 写入 stderr，之后可用该 ID 继续同一
+对话；`--force` 强制重新生成而不是复用匹配答案。`collection review` 生成带引用校验的综述
+report；`collection research` 支持 review、comparison、gaps 和 custom 四种 report，custom 通过
+`--prompt` 或 `--prompt-file` 提供研究问题。report 在来源未变化时复用旧结果；stale 和
+partial-coverage 警告写入 stderr。
 
 ## 维护
 
