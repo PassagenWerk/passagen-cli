@@ -39,7 +39,7 @@ providers:
       # Secret 只从环境变量读取，不写入 YAML。
       api_key_env: PASSAGEN_API_KEY
       timeout_seconds: 120
-      max_context_window: 128000
+      max_context_window: 1000000
       flavor: deepseek
       reasoning: disable
 
@@ -57,10 +57,10 @@ pipeline:
   summarization:
     # auto 根据上下文预算选择 full 或 hierarchical。
     strategy: auto
-    chunk_max_input_tokens: 24000
+    chunk_max_input_tokens: 128000
     chunk_overlap_paragraphs: 1
-    fact_max_output_tokens: 1500
-    summary_max_output_tokens: 3000
+    fact_max_output_tokens: 6000
+    summary_max_output_tokens: 20000
     # null 使用 Core 内置 prompt。
     facts_prompt_path: null
     summary_prompt_path: null
@@ -68,5 +68,15 @@ pipeline:
     reduce_prompt_path: null
     repair_prompt_path: null
   outlining:
-    max_output_tokens: 4000
+    max_output_tokens: 40000
     prompt_path: null
+
+assistant:
+  rewrite_max_output_tokens: 1024
+  answer_max_output_tokens: 8192
+  truncated_response_max_attempts: 3
+  max_history_messages: 10
+  max_raw_sections: 3
+  rewrite_prompt_path: null
+  answer_prompt_path: null
+  repair_prompt_path: null

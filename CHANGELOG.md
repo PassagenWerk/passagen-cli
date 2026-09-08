@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the documented and example generation budgets for the 1M-context default model.
+
 ## [0.5.0] - 2026-09-05
 
 ### Changed

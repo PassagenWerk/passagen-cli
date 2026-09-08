@@ -6,6 +6,7 @@ import typer
 from passagen.prompting import (
     PromptTemplateError,
     load_outline_prompt_template,
+    load_qa_prompt_templates,
     load_summary_prompt_templates,
 )
 from rich.table import Table
@@ -32,6 +33,11 @@ def config_check(ctx: typer.Context) -> None:
             settings.pipeline.summarization.reduce_prompt_path,
         )
         load_outline_prompt_template(settings.pipeline.outlining.prompt_path)
+        load_qa_prompt_templates(
+            settings.assistant.rewrite_prompt_path,
+            settings.assistant.answer_prompt_path,
+            settings.assistant.repair_prompt_path,
+        )
     except PromptTemplateError as exc:
         logger.error("prompt configuration failed: %s", exc)
         console.print(f"[red]Prompt configuration error:[/red] {exc}", highlight=False)
@@ -55,6 +61,20 @@ def config_check(ctx: typer.Context) -> None:
         table.add_row(f"providers.llm.profiles.{name}.model", profile.model)
     for purpose, profile_name in settings.providers.llm.tasks.items():
         table.add_row(f"providers.llm.tasks.{purpose.value}", profile_name)
+    table.add_row(
+        "assistant.rewrite_max_output_tokens",
+        str(settings.assistant.rewrite_max_output_tokens),
+    )
+    table.add_row(
+        "assistant.answer_max_output_tokens",
+        str(settings.assistant.answer_max_output_tokens),
+    )
+    table.add_row(
+        "assistant.truncated_response_max_attempts",
+        str(settings.assistant.truncated_response_max_attempts),
+    )
+    table.add_row("assistant.max_history_messages", str(settings.assistant.max_history_messages))
+    table.add_row("assistant.max_raw_sections", str(settings.assistant.max_raw_sections))
     table.add_row("pipeline.metadata.first_pages", str(settings.pipeline.metadata.first_pages))
     table.add_row("pipeline.parsing.parser", settings.pipeline.parsing.parser.value)
     table.add_row("pipeline.summarization.strategy", settings.pipeline.summarization.strategy.value)

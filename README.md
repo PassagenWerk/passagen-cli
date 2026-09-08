@@ -74,7 +74,7 @@ providers:
       base_url: https://api.deepseek.com/v1
       model: deepseek-flash-v4
       api_key_env: PASSAGEN_API_KEY
-      max_context_window: 128000
+      max_context_window: 1000000
       flavor: deepseek
       reasoning: disable
 ```
