@@ -162,7 +162,7 @@ def _run_report(
 
 
 def _report_report_result(result: CollectionReportResult) -> None:
-    detail = result.disposition
+    detail: str = result.disposition
     if result.record.run_id is not None:
         detail += f", run={result.record.run_id}"
     typer.echo(f"Collection {result.record.kind.value} report: {detail}", err=True)
