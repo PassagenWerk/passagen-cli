@@ -45,12 +45,19 @@ Metadata 开始完整重建。
 ```bash
 passagen list [--status STATUS]
 passagen show <paper-id>
+passagen collection synthesize <collection-id> [--format markdown|json] [--allow-partial] [--force]
+passagen collection compare <collection-id> [--format markdown|json] [--allow-partial] [--force]
 passagen collection --help
 passagen tag --help
 ```
 
 Collection 是有顺序的论文集合。Tag 是可独立组合和筛选的用户标签；它与 Summary 中生成的
 keywords 不自动合并。
+
+`collection synthesize` 输出完整 synthesis；`collection compare` 的 JSON 输出 comparison
+matrix，Markdown 输出 Core 的完整 synthesis（其中包含 comparison）。两个命令默认要求全部论文
+具有有效 Summary；`--allow-partial` 显式允许部分覆盖，`--force` 跳过未变化结果的复用。payload
+写入 stdout，运行状态、warning 和错误写入 stderr。
 
 ## 维护
 

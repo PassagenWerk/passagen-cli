@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added `collection synthesize` and `collection compare` with Markdown/JSON output, explicit
+  partial-coverage and force-regeneration controls, and machine-readable stdout.
+
 ### Changed
 
 - Updated the documented and example generation budgets for the 1M-context default model.

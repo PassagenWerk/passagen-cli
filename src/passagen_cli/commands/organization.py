@@ -1,10 +1,19 @@
 """Collection and tag management commands."""
 
 import logging
+from enum import StrEnum
 from typing import Annotated, NoReturn
 
 import typer
+from passagen.assistant import AssistantError
 from passagen.catalog import CatalogError, CatalogService
+from passagen.providers import LlmProviderError
+from passagen.research import (
+    CollectionSynthesisResult,
+    CollectionSynthesisService,
+    render_synthesis_json,
+    render_synthesis_markdown,
+)
 from rich.table import Table
 
 from passagen_cli.runtime import console, get_state
@@ -14,15 +23,70 @@ tag_app = typer.Typer(help="Manage paper tags.")
 logger = logging.getLogger(__name__)
 
 
+class SynthesisFormat(StrEnum):
+    MARKDOWN = "markdown"
+    JSON = "json"
+
+
 def _catalog(ctx: typer.Context) -> CatalogService:
     settings = get_state(ctx).settings
     return CatalogService(settings.resolved_database_path, settings.resolved_data_dir)
+
+
+def _synthesis_service(ctx: typer.Context) -> CollectionSynthesisService:
+    settings = get_state(ctx).settings
+    return CollectionSynthesisService(
+        settings.resolved_database_path,
+        settings.resolved_data_dir,
+        settings.providers.llm,
+        settings.assistant,
+    )
 
 
 def _fail(kind: str, action: str, exc: CatalogError) -> NoReturn:
     logger.error("%s %s failed: %s", kind, action, exc)
     console.print(f"[red]{kind.title()} error:[/red] {exc}", highlight=False)
     raise typer.Exit(code=1) from exc
+
+
+def _run_synthesis(
+    ctx: typer.Context,
+    collection_id: str,
+    *,
+    output_format: SynthesisFormat,
+    allow_partial: bool,
+    force: bool,
+    comparison_only: bool,
+) -> None:
+    try:
+        result = _synthesis_service(ctx).synthesize(
+            collection_id, allow_partial=allow_partial, force=force
+        )
+    except (AssistantError, CatalogError, LlmProviderError) as exc:
+        logger.info("collection synthesis failed: collection_id=%s error=%s", collection_id, exc)
+        typer.echo(f"Collection synthesis error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if output_format is SynthesisFormat.JSON:
+        if comparison_only:
+            payload = result.synthesis.comparison_matrix.model_dump_json(indent=2) + "\n"
+        else:
+            payload = render_synthesis_json(result.synthesis).decode("utf-8")
+    else:
+        payload = render_synthesis_markdown(result.synthesis)
+    typer.echo(payload, nl=False)
+    _report_synthesis(result, comparison_only=comparison_only)
+
+
+def _report_synthesis(result: CollectionSynthesisResult, *, comparison_only: bool) -> None:
+    operation = "comparison" if comparison_only else "synthesis"
+    detail = f"{result.disposition}, strategy={result.strategy}"
+    if result.run_id is not None:
+        detail += f", run={result.run_id}"
+    typer.echo(f"Collection {operation}: {detail}", err=True)
+    missing = result.synthesis.coverage.missing_summary_paper_ids
+    if missing:
+        typer.echo(f"Partial coverage; missing summaries: {', '.join(missing)}", err=True)
 
 
 @collection_app.command("create", help="Create an empty collection.")
@@ -114,6 +178,54 @@ def rename_collection(
     except CatalogError as exc:
         _fail("collection", "rename", exc)
     console.print(f"Collection renamed: {collection.name}", markup=False)
+
+
+@collection_app.command("synthesize", help="Generate or reuse a collection synthesis.")
+def synthesize_collection(
+    ctx: typer.Context,
+    collection_id: Annotated[str, typer.Argument(help="Collection ID.")],
+    output_format: Annotated[
+        SynthesisFormat, typer.Option("--format", help="Output format: markdown or json.")
+    ] = SynthesisFormat.MARKDOWN,
+    allow_partial: Annotated[
+        bool, typer.Option(help="Proceed when some papers lack valid summaries.")
+    ] = False,
+    force: Annotated[
+        bool, typer.Option(help="Generate a new synthesis instead of reusing one.")
+    ] = False,
+) -> None:
+    _run_synthesis(
+        ctx,
+        collection_id,
+        output_format=output_format,
+        allow_partial=allow_partial,
+        force=force,
+        comparison_only=False,
+    )
+
+
+@collection_app.command("compare", help="Generate or reuse a collection paper comparison.")
+def compare_collection(
+    ctx: typer.Context,
+    collection_id: Annotated[str, typer.Argument(help="Collection ID.")],
+    output_format: Annotated[
+        SynthesisFormat, typer.Option("--format", help="Output format: markdown or json.")
+    ] = SynthesisFormat.MARKDOWN,
+    allow_partial: Annotated[
+        bool, typer.Option(help="Proceed when some papers lack valid summaries.")
+    ] = False,
+    force: Annotated[
+        bool, typer.Option(help="Generate a new synthesis instead of reusing one.")
+    ] = False,
+) -> None:
+    _run_synthesis(
+        ctx,
+        collection_id,
+        output_format=output_format,
+        allow_partial=allow_partial,
+        force=force,
+        comparison_only=True,
+    )
 
 
 @tag_app.command("create", help="Create a tag without a color.")
