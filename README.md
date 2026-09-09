@@ -18,7 +18,8 @@ README 中的仓库链接指向 GitHub；在 GitLab 或 Gitea 镜像中，对应
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
-- DeepSeek API key，或兼容 OpenAI Chat Completions 的服务
+- LLM provider 凭据；Passagen 同时支持 DeepSeek API 和 OpenAI Responses API 兼容端点，
+  并可按 task route 混合使用不同 provider/profile
 - 可选 GROBID；不使用 GROBID 时可选择本地 PyMuPDF parser
 - PDF 必须包含文本层；当前不提供 OCR
 
@@ -56,6 +57,27 @@ uv run passagen show <paper-id>
 ```
 
 `run` 会先扫描目录，再处理所有未完成论文。重复运行时，相同 PDF 和已经完成的阶段会被跳过。
+
+## Docker Web
+
+CLI 负责初始化和维护 Web Docker 容器挂载的 data directory。先创建数据库和配置：
+
+```bash
+uv run passagen --data-dir /absolute/path/to/library db init
+```
+
+然后使用相邻的 Web checkout 启动容器：
+
+```bash
+cd ../passagen-web
+cp .env.example .env
+# 在 .env 中设置 PASSAGEN_DATA_DIR=/absolute/path/to/library 和 PASSAGEN_API_KEY
+docker compose build
+docker compose up -d
+```
+
+镜像不会包含论文、artifact 或 API key。端口、局域网 origin 和 UID/GID 配置见
+[Passagen Web Docker 部署](https://github.com/PassagenWerk/passagen-web/blob/main/docs/user/docker.md)。
 
 ## 配置
 

@@ -5,6 +5,17 @@ All notable changes to Passagen are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-10
+
+Requires `passagen-core` `0.7.x` and Passagen Schema version 10.
+
+### Changed
+
+- Expanded the example configuration and user documentation for all task-aware LLM routes,
+  including collection synthesis, report planning/answering, and collection Ask.
+- Updated the compatible Core release line to `0.7.x`.
+- Documented how to initialize a CLI data directory for the Passagen Web Docker service.
+
 ## [0.6.0] - 2026-09-09
 
 Requires `passagen-core` `0.6.x` and Passagen Schema version 10.
