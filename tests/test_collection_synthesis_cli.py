@@ -14,7 +14,15 @@ runner = CliRunner()
 def _result(*, partial: bool = False) -> CollectionSynthesisResult:
     synthesis = CollectionSynthesis.model_validate(
         {
-            "overview": "Two systems are compared.",
+            "executive_overview": "Two systems are compared.",
+            "paper_roles": [
+                {
+                    "paper_id": "paper-1",
+                    "role": "Evaluation evidence",
+                    "contribution": "Evaluates a system.",
+                    "citation_ids": ["citation-1"],
+                }
+            ],
             "themes": [
                 {
                     "name": "Systems",
@@ -120,7 +128,7 @@ def test_collection_synthesize_renders_core_json_and_forwards_options(
     )
 
     assert result.exit_code == 0
-    assert json.loads(result.stdout)["overview"] == "Two systems are compared."
+    assert json.loads(result.stdout)["executive_overview"] == "Two systems are compared."
     assert service.calls == [("collection-1", True, True)]
     assert "generated, strategy=direct, run=run-1" in result.stderr
     assert "Partial coverage; missing summaries: paper-2" in result.stderr
@@ -169,7 +177,7 @@ def test_collection_compare_markdown_uses_core_full_renderer(
     )
 
     assert result.exit_code == 0
-    assert result.stdout.startswith("# Collection Synthesis\n")
+    assert result.stdout.startswith("# Collection Intelligence\n")
     assert "## Comparison" in result.stdout
 
 

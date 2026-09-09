@@ -73,10 +73,23 @@ pipeline:
 
 assistant:
   rewrite_max_output_tokens: 1024
+  equivalence_max_output_tokens: 1024
+  max_qa_candidates: 3
+  qa_candidate_pool_size: 20
   answer_max_output_tokens: 8192
   truncated_response_max_attempts: 3
   max_history_messages: 10
   max_raw_sections: 3
+  # Collection synthesis uses summaries only and switches to map/reduce when needed.
+  collection_max_input_tokens: 64000
+  collection_map_max_output_tokens: 8000
+  collection_synthesis_max_output_tokens: 12000
+  # Collection Ask retrieves at most this many relevant papers per answer.
+  collection_max_selected_papers: 4
+  report_max_output_tokens: 12000
+  report_validation_max_attempts: 2
   rewrite_prompt_path: null
+  equivalence_prompt_path: null
   answer_prompt_path: null
   repair_prompt_path: null
+  report_prompt_path: null
